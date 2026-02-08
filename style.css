@@ -3,12 +3,8 @@
   --panel: rgba(10,14,24,.72);
   --line: rgba(255,255,255,.12);
   --text: rgba(235,240,255,.92);
-  --muted: rgba(235,240,255,.65);
-  --accent: rgba(91,140,255,.9);
-  --danger: rgba(255,91,110,.9);
 }
 
-/* ✅ 페이지가 흔들리거나 스크롤 생기는 원인 제거 */
 *{ box-sizing:border-box; }
 html,body{
   margin:0;
@@ -16,12 +12,10 @@ html,body{
   background:var(--bg);
   color:var(--text);
   font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;
-  overflow:hidden;                 /* ✅ 스크롤바 자체 제거 */
-  overscroll-behavior:none;        /* ✅ 탄성 스크롤/오버스크롤 방지 */
+  overflow:hidden;
+  overscroll-behavior:none;
 }
-body{
-  touch-action: none;              /* ✅ 터치 스크롤/줌 방지 */
-}
+body{ touch-action:none; }
 
 #app{
   position:fixed;
@@ -32,53 +26,51 @@ body{
   overflow:hidden;
 }
 
-/* ✅ 내부 논리 좌표계는 960x540. 화면에 맞춰 CSS로만 확대/축소 */
 #game{
   width:min(100vw, 1200px);
   height:auto;
   aspect-ratio: 16/9;
-  background: #050812;
-  border:1px solid var(--line);
-  border-radius: 14px;
-  box-shadow: 0 14px 40px rgba(0,0,0,.45);
-  touch-action: none;
+  background:#050812;
+  border:1px solid rgba(255,255,255,.12);
+  border-radius:14px;
+  box-shadow:0 14px 40px rgba(0,0,0,.45);
+  touch-action:none;
   user-select:none;
   -webkit-user-select:none;
 }
 
+/* 모바일 버튼 */
 .touch{
   position: fixed;
-  left: 0; right: 0; bottom: 0;
-  padding: 14px 14px calc(14px + env(safe-area-inset-bottom));
-  display: none;
-  gap: 12px;
-  pointer-events: none;
+  left:0; right:0; bottom:0;
+  padding:14px 14px calc(14px + env(safe-area-inset-bottom));
+  display:none;
+  gap:12px;
+  pointer-events:none;
 }
 .touch .pad, .touch .ab{
   display:flex;
   gap:10px;
   pointer-events:auto;
 }
-.touch .pad{ justify-content:flex-start; }
-.touch .ab{ justify-content:flex-end; margin-left:auto; }
+.touch .ab{ margin-left:auto; justify-content:flex-end; }
 
 .tbtn{
-  border:1px solid var(--line);
-  background: var(--panel);
-  color: var(--text);
-  padding: 12px 14px;
-  border-radius: 14px;
-  font-weight: 800;
-  letter-spacing: .2px;
-  box-shadow: 0 10px 26px rgba(0,0,0,.38);
+  border:1px solid rgba(255,255,255,.14);
+  background: rgba(10,14,24,.72);
+  color: rgba(235,240,255,.92);
+  padding:12px 14px;
+  border-radius:14px;
+  font-weight:800;
+  box-shadow:0 10px 26px rgba(0,0,0,.38);
   user-select:none;
   -webkit-user-select:none;
 }
-.tbtn.big{ padding: 14px 18px; background: rgba(91,140,255,.22); border-color: rgba(91,140,255,.45); }
+.tbtn.big{ padding:14px 18px; background: rgba(91,140,255,.22); border-color: rgba(91,140,255,.45); }
 .tbtn.ghost{ background: rgba(255,255,255,.06); }
 .tbtn:active{ transform: translateY(1px); }
 
 @media (max-width: 980px){
   .touch{ display:flex; }
-  #game{ width:100vw; border-radius: 0; border-left:0; border-right:0; }
+  #game{ width:100vw; border-radius:0; border-left:0; border-right:0; }
 }
