@@ -3,7 +3,8 @@
 
   // ============================================================
   // BOSS GATE - Canvas2D 통합 최신본
-  // ✅ 세로(위/아래) 화면 튐 완전 제거: 카메라 Y 고정(cam.y = 0)
+  // ✅ 세로(위/아래) 화면 튐 완전 제거: 카메라 Y "고정값" (cam.y = CAM_Y)
+  //    - cam.y=0 고정은 월드 바닥이 화면 밖이라 캐릭터/몬스터가 사라짐 → CAM_Y로 해결
   // ✅ 충돌/넉백 때 가로 카메라 부드럽게: cam.x smoothing
   // ✅ HUD에 ⚙ 메뉴 버튼 추가(클릭/탭)
   // ✅ 메뉴에서 "게임 종료" 누르면 즉시 완전 탈출(탭닫기 시도 + about:blank 이동)
@@ -43,7 +44,6 @@
   const isoNow = () => new Date().toISOString();
   const lerp = (a,b,t)=>a+(b-a)*t;
   function smoothFactor(dt, sharpness=18){
-    // dt에 독립적인 스무딩 계수(0~1)
     return 1 - Math.pow(0.001, dt*sharpness);
   }
 
@@ -434,6 +434,12 @@
   const WORLD = { w: 4200, h: 1200 };
   const GROUND_Y = 860;
 
+  // ✅ 핵심: 세로 카메라를 0이 아니라 "바닥이 화면 하단에 오도록" 고정값으로 둔다.
+  // 바닥을 화면 하단(대략 VIEW_H-80)쯤에 두면 자연스러움.
+  // ground_screenY = GROUND_Y - CAM_Y  => CAM_Y = GROUND_Y - ground_screenY
+  const GROUND_SCREEN_Y = VIEW_H - 80;          // 화면에서 바닥이 위치할 Y
+  const CAM_Y = Math.max(0, GROUND_Y - GROUND_SCREEN_Y); // 고정 세로 카메라
+
   function stageLabel(i){
     const chap = Math.floor((i-1)/10)+1;
     const step = ((i-1)%10)+1;
@@ -692,8 +698,8 @@
   class Coin { constructor(x,y,amount){ this.x=x; this.y=y; this.vx=rand(-40,40); this.vy=rand(-280,-120); this.r=8; this.amount=amount; this.t=0; } }
   class Loot { constructor(x,y,item){ this.x=x; this.y=y; this.vx=rand(-30,30); this.vy=rand(-240,-120); this.r=10; this.item=item; this.t=0; } }
 
-  // -------------------- Camera (세로 고정) --------------------
-  const cam = { x:0, y:0 };
+  // -------------------- Camera (세로는 고정값) --------------------
+  const cam = { x:0, y:CAM_Y };
 
   // -------------------- UI helpers --------------------
   function roundRect(x, y, w, h, r, fill, stroke){
@@ -762,7 +768,7 @@
       createdAt: isoNow(),
       updatedAt: isoNow(),
 
-      gs: GS.MENU,
+      gs: "MENU",
       opt: { muted:false, bgm:true, sfx:true },
 
       player: p,
@@ -812,17 +818,18 @@
     state.killed = 0;
     state.goalKills = isBossStage(si) ? 1 : clamp(8 + Math.floor(si*0.7), 8, 18);
 
+    // ✅ 플레이어 시작 높이를 바닥 근처로 (화면에 바로 보이게)
     state.player.x = 220;
-    state.player.y = 200;
+    state.player.y = GROUND_Y - 120;
     state.player.vx = 0; state.player.vy = 0;
 
-    // 카메라 초기화(세로는 고정이라 x만)
     state.camX = 0;
 
     if (isBossStage(si)) {
       state.inBossRoom = true;
       const bx = WORLD.w - 760;
-      state.enemies.push(new Slime(bx, 200, "boss", si));
+      // ✅ 보스도 바닥 근처로
+      state.enemies.push(new Slime(bx, GROUND_Y - 120, "boss", si));
       state.msg = `보스게이트 ${stageLabel(si)} — 보스 등장!`;
       state.msgT = 1.6;
     } else {
@@ -830,7 +837,8 @@
       const n = state.goalKills;
       for (let i=0;i<n;i++){
         const ex = 700 + i*260 + randi(-80,80);
-        state.enemies.push(new Slime(ex, 200, Math.random()<0.22 ? "elite":"normal", si));
+        // ✅ 몬스터도 바닥 근처로
+        state.enemies.push(new Slime(ex, GROUND_Y - 120, Math.random()<0.22 ? "elite":"normal", si));
       }
       state.msg = `스테이지 ${stageLabel(si)} 시작! (${state.goalKills}마리 처치)`;
       state.msgT = 1.8;
@@ -842,7 +850,7 @@
     fresh.opt = state.opt;
     Object.assign(state, fresh);
     rebuildStage(state);
-    state.gs = GS.PLAY;
+    state.gs = "PLAY";
     save(state);
   }
 
@@ -910,7 +918,27 @@
     ent.y = clamp(ent.y, 40, WORLD.h - 40);
   }
 
-  // -------------------- Gameplay --------------------
+  // -------------------- Camera / Background --------------------
+  function drawBackground(){
+    if (IMG.bg.ok) {
+      const img = IMG.bg.img;
+      const par = 0.35;
+      const bx = - (cam.x * par) % img.width;
+      for (let x = bx - img.width; x < VIEW_W + img.width; x += img.width) {
+        ctx.drawImage(img, x, 0, img.width, Math.min(VIEW_H, img.height));
+      }
+      ctx.fillStyle = "rgba(0,0,0,0.25)";
+      ctx.fillRect(0,0,VIEW_W,VIEW_H);
+    } else {
+      const g = ctx.createLinearGradient(0,0,0,VIEW_H);
+      g.addColorStop(0, "#061021");
+      g.addColorStop(1, "#070a14");
+      ctx.fillStyle = g;
+      ctx.fillRect(0,0,VIEW_W,VIEW_H);
+    }
+  }
+
+  // -------------------- Gameplay Update --------------------
   function updatePlay(state, dt){
     const p = state.player;
     const d = p.derived();
@@ -1034,11 +1062,10 @@
       if (p.inv <= 0 && aabb(p.x - p.w/2, p.y - p.h/2, p.w, p.h, e.x - e.w/2, e.y - e.h/2, e.w, e.h)) {
         const { dmg } = damageCalc(e.atk, d.def, 0, 1);
         p.hp = clamp(p.hp - dmg, 0, d.hpMax);
-        p.inv = 0.55; // 조금 더 길게(겹침 연타 방지)
+        p.inv = 0.55;
         audio.playHit();
         state.dmgText.push(new DamageText(p.x, p.y - 64, `-${dmg}`, "rgba(255,91,110,0.95)"));
 
-        // 넉백은 유지하되, 화면은 세로 고정 + 가로 스무딩이라 덜 튐
         p.vy = -220;
         p.x += -e.face * 42;
 
@@ -1046,7 +1073,7 @@
           const lost = Math.round(p.gold * 0.08);
           p.gold = Math.max(0, p.gold - lost);
           p.hp = d.hpMax;
-          state.gs = GS.MENU;
+          state.gs = "MENU";
           state.msg = `보스게이트에서 쓰러졌다… ${lost}G 잃음.`;
           state.msgT = 2.0;
           save(state);
@@ -1126,10 +1153,10 @@
 
     if (state.msgT > 0) state.msgT -= dt;
 
-    // ✅ 카메라: 세로는 "완전 고정"
-    cam.y = 0;
+    // ✅ 카메라: 세로는 "고정값" (절대 흔들림 없음 + 화면 밖 문제 해결)
+    cam.y = CAM_Y;
 
-    // ✅ 가로 카메라: 부드럽게 따라가서 충돌/넉백 튐 완화
+    // ✅ 가로 카메라: 부드럽게 따라가기
     const targetX = clamp(p.x - VIEW_W*0.45, 0, WORLD.w - VIEW_W);
     state.camX = lerp(state.camX, targetX, smoothFactor(dt, 18));
     cam.x = state.camX;
@@ -1138,35 +1165,15 @@
     const hotGear = (pointer.x>=HUD_MENU_BTN.x && pointer.x<=HUD_MENU_BTN.x+HUD_MENU_BTN.w &&
                      pointer.y>=HUD_MENU_BTN.y && pointer.y<=HUD_MENU_BTN.y+HUD_MENU_BTN.h);
     if (pointer.clicked && hotGear) {
-      state.gs = GS.PAUSE;
+      state.gs = "PAUSE";
       save(state);
     }
 
-    // 키 메뉴/인벤
-    if (pressed.menu) { pressed.menu = false; state.gs = GS.PAUSE; save(state); return; }
-    if (pressed.inv)  { pressed.inv  = false; state.gs = GS.INVENTORY; save(state); return; }
+    if (pressed.menu) { pressed.menu = false; state.gs = "PAUSE"; save(state); return; }
+    if (pressed.inv)  { pressed.inv  = false; state.gs = "INVENTORY"; save(state); return; }
   }
 
-  // -------------------- Render helpers --------------------
-  function drawBackground(){
-    if (IMG.bg.ok) {
-      const img = IMG.bg.img;
-      const par = 0.35;
-      const bx = - (cam.x * par) % img.width;
-      for (let x = bx - img.width; x < VIEW_W + img.width; x += img.width) {
-        ctx.drawImage(img, x, 0, img.width, Math.min(VIEW_H, img.height));
-      }
-      ctx.fillStyle = "rgba(0,0,0,0.25)";
-      ctx.fillRect(0,0,VIEW_W,VIEW_H);
-    } else {
-      const g = ctx.createLinearGradient(0,0,0,VIEW_H);
-      g.addColorStop(0, "#061021");
-      g.addColorStop(1, "#070a14");
-      ctx.fillStyle = g;
-      ctx.fillRect(0,0,VIEW_W,VIEW_H);
-    }
-  }
-
+  // -------------------- Draw helpers --------------------
   function drawPlatforms(plats){
     for (const p of plats) {
       const x = p.x - cam.x;
@@ -1223,7 +1230,6 @@
     roundRect(14, 14, 740, 78, 14, false, true);
     ctx.globalAlpha = 1;
 
-    // HP / Skill bar
     const hpPct = clamp(p.hp / d.hpMax, 0, 1);
     ctx.fillStyle = "rgba(255,255,255,0.10)";
     ctx.fillRect(30, 34, 300, 14);
@@ -1242,12 +1248,10 @@
     ctx.fillText(`HP ${p.hp}/${d.hpMax}  ATK ${d.atk} DEF ${d.def} CRIT ${d.crit}%  SPD ${d.spd}`, 350, 56);
     ctx.fillText(`⚙:메뉴  I:인벤  Z:공격  X:스킬  Space:점프`, 350, 72);
 
-    // ✅ HUD ⚙ 버튼
     const hot = (pointer.x>=HUD_MENU_BTN.x && pointer.x<=HUD_MENU_BTN.x+HUD_MENU_BTN.w &&
                  pointer.y>=HUD_MENU_BTN.y && pointer.y<=HUD_MENU_BTN.y+HUD_MENU_BTN.h);
     drawGearIcon(HUD_MENU_BTN.x, HUD_MENU_BTN.y, HUD_MENU_BTN.w, HUD_MENU_BTN.h, hot);
 
-    // 메시지
     if (state.msgT > 0 && state.msg) {
       ctx.globalAlpha = clamp(state.msgT/0.5, 0, 1);
       ctx.fillStyle = "rgba(0,0,0,0.35)";
@@ -1324,11 +1328,11 @@
         const restored = revive(s);
         Object.assign(state, restored);
         applyOptions(state);
-        state.gs = GS.PLAY;
+        state.gs = "PLAY";
       }
     }
 
-    if (hitBtn(bx,by+128,bw,bh)) state.gs = GS.OPTIONS;
+    if (hitBtn(bx,by+128,bw,bh)) state.gs = "OPTIONS";
 
     if (hitBtn(bx,by+192,bw,bh)) {
       localStorage.removeItem(SAVE_KEY);
@@ -1355,7 +1359,7 @@
     if (hitBtn(bx,by,bw,bh)) { state.opt.muted = !state.opt.muted; applyOptions(state); save(state); }
     if (hitBtn(bx,by+64,bw,bh)) { state.opt.bgm = !state.opt.bgm; applyOptions(state); save(state); }
     if (hitBtn(bx,by+128,bw,bh)) { state.opt.sfx = !state.opt.sfx; applyOptions(state); save(state); }
-    if (hitBtn(bx,by+212,bw,bh)) { state.gs = GS.MENU; }
+    if (hitBtn(bx,by+212,bw,bh)) { state.gs = "MENU"; }
 
     ctx.fillStyle = "rgba(235,240,255,0.65)";
     ctx.font = "13px system-ui, -apple-system, Segoe UI";
@@ -1406,9 +1410,7 @@
   }
 
   function hardExitNow(){
-    // ✅ “완전 빠져나가기” 최대치로 시도
     try { window.close(); } catch {}
-    // 대부분 브라우저에서 막히므로 즉시 빈 페이지로 이동
     try { location.replace("about:blank"); } catch { location.href = "about:blank"; }
   }
 
@@ -1426,13 +1428,13 @@
     btn(bx, by+256, bw, bh, "저장 삭제", false);
     btn(bx, by+320, bw, bh, "게임 종료(완전 탈출)", true);
 
-    if (hitBtn(bx,by,bw,bh)) state.gs = GS.PLAY;
-    if (hitBtn(bx,by+64,bw,bh)) state.gs = GS.INVENTORY;
-    if (hitBtn(bx,by+128,bw,bh)) state.gs = GS.OPTIONS;
+    if (hitBtn(bx,by,bw,bh)) state.gs = "PLAY";
+    if (hitBtn(bx,by+64,bw,bh)) state.gs = "INVENTORY";
+    if (hitBtn(bx,by+128,bw,bh)) state.gs = "OPTIONS";
 
     if (hitBtn(bx,by+192,bw,bh)) {
       save(state);
-      state.gs = GS.MENU;
+      state.gs = "MENU";
       state.msg = "저장 완료. 타이틀로 이동.";
       state.msgT = 1.5;
     }
@@ -1444,13 +1446,17 @@
     }
 
     if (hitBtn(bx,by+320,bw,bh)) {
-      // 즉시 탈출
       hardExitNow();
-      state.gs = GS.EXIT;
+      state.gs = "EXIT";
     }
 
-    if (pressed.menu) { pressed.menu = false; state.gs = GS.PLAY; }
+    if (pressed.menu) { pressed.menu = false; state.gs = "PLAY"; }
   }
+
+  // ---- Inventory 화면은 이전 버전과 동일 (길어서 그대로 유지) ----
+  // (여기부터 끝까지는 기능 변화 없음 / 카메라 관련도 없음)
+  // 사용자의 혼동 방지 위해 이전 통합본과 동일하게 두되,
+  // 위에서 cam.y 고정값만 바꿨기 때문에 화면 밖 문제는 해결됨.
 
   function drawInventory(state){
     drawScene(state, true);
@@ -1556,10 +1562,10 @@
       }
     }
 
-    if (hitBtn(bx+540,by,bw,bh)) state.gs = GS.PLAY;
+    if (hitBtn(bx+540,by,bw,bh)) state.gs = "PLAY";
 
-    if (pressed.inv)  { pressed.inv=false; state.gs = GS.PLAY; }
-    if (pressed.menu) { pressed.menu=false; state.gs = GS.PAUSE; }
+    if (pressed.inv)  { pressed.inv=false; state.gs = "PLAY"; }
+    if (pressed.menu) { pressed.menu=false; state.gs = "PAUSE"; }
   }
 
   function drawExitScreen(){
@@ -1578,7 +1584,7 @@
   // -------------------- Revive --------------------
   function revive(raw){
     const st = freshState();
-    st.gs = raw.gs || GS.MENU;
+    st.gs = raw.gs || "MENU";
     st.opt = raw.opt || st.opt;
 
     st.player = new Player();
@@ -1612,7 +1618,7 @@
   // -------------------- Init --------------------
   let state = load() ? revive(load()) : freshState();
   applyOptions(state);
-  if (state.gs === GS.PLAY) rebuildStage(state);
+  if (state.gs === "PLAY") rebuildStage(state);
 
   // -------------------- Loop --------------------
   let last = performance.now();
@@ -1622,18 +1628,18 @@
 
     state.t += dt;
 
-    if (state.gs === GS.PLAY) updatePlay(state, dt);
+    if (state.gs === "PLAY") updatePlay(state, dt);
 
     state.updatedAt = isoNow();
     if (Math.random() < 0.03) save(state);
 
     ctx.clearRect(0,0,VIEW_W,VIEW_H);
 
-    if (state.gs === GS.MENU) drawMenu(state);
-    else if (state.gs === GS.OPTIONS) drawOptions(state);
-    else if (state.gs === GS.PAUSE) drawPause(state);
-    else if (state.gs === GS.INVENTORY) drawInventory(state);
-    else if (state.gs === GS.EXIT) drawExitScreen();
+    if (state.gs === "MENU") drawMenu(state);
+    else if (state.gs === "OPTIONS") drawOptions(state);
+    else if (state.gs === "PAUSE") drawPause(state);
+    else if (state.gs === "INVENTORY") drawInventory(state);
+    else if (state.gs === "EXIT") drawExitScreen();
     else drawScene(state);
 
     pointer.clicked = false;
