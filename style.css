@@ -1,185 +1,58 @@
 :root{
   --bg:#0b0f18;
-  --text:#e9eefc;
-  --muted:#a9b3cf;
-  --line:#24314d;
-  --primary:#5b8cff;
-  --danger:#ff5b6e;
-  --shadow: 0 10px 30px rgba(0,0,0,.35);
-  --radius: 16px;
-  --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono","Courier New", monospace;
-  --sans: system-ui, -apple-system, Segoe UI, Roboto, Arial, "Apple SD Gothic Neo","Noto Sans KR","Malgun Gothic", sans-serif;
+  --panel: rgba(10,14,24,.72);
+  --line: rgba(255,255,255,.12);
+  --text: rgba(235,240,255,.92);
+  --muted: rgba(235,240,255,.65);
+  --accent: rgba(91,140,255,.9);
+  --danger: rgba(255,91,110,.9);
 }
 
-*{box-sizing:border-box;}
-html,body{height:100%;}
-body{
-  margin:0;
-  background:
-    radial-gradient(1200px 900px at 30% -10%, rgba(91,140,255,.25), transparent 60%),
-    radial-gradient(1000px 700px at 90% 10%, rgba(46,229,157,.12), transparent 55%),
-    var(--bg);
-  color:var(--text);
-  font-family:var(--sans);
-  overscroll-behavior: none;
-}
+*{ box-sizing:border-box; }
+html,body{ margin:0; height:100%; background:var(--bg); color:var(--text); font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial; }
+#app{ height:100%; width:100%; display:flex; align-items:center; justify-content:center; }
 
-#app{min-height:100%; display:flex; flex-direction:column;}
-
-.topbar{
-  position:sticky; top:0; z-index:5;
-  display:flex; align-items:center; justify-content:space-between;
-  padding: 12px 14px;
-  background: rgba(11,15,24,.8);
-  backdrop-filter: blur(10px);
-  border-bottom:1px solid rgba(36,49,77,.7);
-}
-.title{font-weight:800; letter-spacing:.2px;}
-.top-actions{display:flex; gap:10px; flex-wrap:wrap;}
-
-.layout{
-  flex:1;
-  display:grid;
-  grid-template-columns: minmax(320px, 1fr) 420px;
-  gap:14px;
-  padding: 14px;
-}
-
-.stage{
-  position:relative;
-  border-radius: var(--radius);
-  overflow:hidden;
-  border:1px solid rgba(36,49,77,.9);
-  box-shadow: var(--shadow);
-  background: rgba(0,0,0,.1);
-  min-height: 52vh;
-}
 #game{
-  width:100%;
-  height:100%;
-  display:block;
+  width:min(100vw, 1200px);
+  height:auto;
+  aspect-ratio: 16/9;
+  background: #050812;
+  border:1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: 0 14px 40px rgba(0,0,0,.45);
   touch-action: none;
 }
 
-.panel{display:flex; flex-direction:column; gap:14px;}
-.card{
-  background: linear-gradient(180deg, rgba(255,255,255,.03), rgba(255,255,255,.01));
-  border:1px solid rgba(36,49,77,.9);
-  border-radius: var(--radius);
-  padding: 14px;
-  box-shadow: var(--shadow);
+.touch{
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  padding: 14px 14px calc(14px + env(safe-area-inset-bottom));
+  display: none;
+  gap: 12px;
+  pointer-events: none;
 }
-.card-title{font-weight:800; margin-bottom:10px;}
-.hr{height:1px; background: rgba(36,49,77,.85); margin:12px 0;}
+.touch .pad, .touch .ab{
+  display:flex; gap:10px; pointer-events:auto;
+}
+.touch .pad{ justify-content:flex-start; }
+.touch .ab{ justify-content:flex-end; margin-left:auto; }
 
-.row{display:flex; align-items:center;}
-.gap{gap:10px;}
-.wrap{flex-wrap:wrap;}
-.small{font-size:12.5px; color:var(--muted);}
-.mono{font-family:var(--mono);}
-
-.btn{
-  border:1px solid rgba(36,49,77,.95);
-  background: rgba(255,255,255,.03);
+.tbtn{
+  border:1px solid var(--line);
+  background: var(--panel);
   color: var(--text);
-  padding: 10px 12px;
-  border-radius: 12px;
-  cursor:pointer;
+  padding: 12px 14px;
+  border-radius: 14px;
+  font-weight: 800;
+  letter-spacing: .2px;
+  box-shadow: 0 10px 26px rgba(0,0,0,.38);
   user-select:none;
-  -webkit-tap-highlight-color: transparent;
 }
-.btn:active{transform: translateY(1px);}
-.btn.primary{border-color: rgba(91,140,255,.65); background: rgba(91,140,255,.18);}
-.btn.danger{border-color: rgba(255,91,110,.65); background: rgba(255,91,110,.14);}
-.btn.ghost{opacity:.9;}
-.btn.big{padding: 12px 14px; font-weight:700;}
+.tbtn.big{ padding: 14px 18px; background: rgba(91,140,255,.22); border-color: rgba(91,140,255,.45); }
+.tbtn.ghost{ background: rgba(255,255,255,.06); }
+.tbtn:active{ transform: translateY(1px); }
 
-.inv{
-  display:flex;
-  flex-direction:column;
-  gap:8px;
-  max-height: 240px;
-  overflow:auto;
-  padding-right: 4px;
-}
-.item{
-  display:flex;
-  gap:10px;
-  align-items:flex-start;
-  border:1px solid rgba(36,49,77,.75);
-  background: rgba(0,0,0,.12);
-  border-radius: 12px;
-  padding: 10px;
-}
-.item .name{font-weight:800;}
-.item .meta{font-size:12px; color:var(--muted); font-family:var(--mono);}
-.item .actions{margin-left:auto; display:flex; gap:8px; flex-wrap:wrap;}
-.item button{padding:8px 10px; border-radius:10px;}
-
-.log{
-  height: 220px;
-  overflow:auto;
-  background: rgba(0,0,0,.15);
-  border:1px solid rgba(36,49,77,.75);
-  border-radius: 12px;
-  padding: 10px;
-  font-family: var(--mono);
-  font-size: 12px;
-  line-height: 1.4;
-}
-.log .line{margin:0 0 8px 0; color:#dbe3ff;}
-.log .dim{color: var(--muted);}
-.hint{margin-top: -4px;}
-
-.touchHUD{
-  position:absolute;
-  inset:0;
-  pointer-events:none;
-}
-.joystick{
-  position:absolute;
-  left: 12px;
-  bottom: 12px;
-  width: 160px;
-  height: 160px;
-  pointer-events: auto;
-}
-.joyBase{
-  position:absolute; inset:0;
-  border-radius:999px;
-  background: rgba(0,0,0,.20);
-  border:1px solid rgba(36,49,77,.75);
-}
-.joyStick{
-  position:absolute;
-  left: 50%;
-  top: 50%;
-  width: 64px;
-  height: 64px;
-  transform: translate(-50%,-50%);
-  border-radius:999px;
-  background: rgba(255,255,255,.07);
-  border:1px solid rgba(36,49,77,.8);
-}
-
-.touchBtns{
-  position:absolute;
-  right: 12px;
-  bottom: 12px;
-  display:grid;
-  grid-template-columns: 1fr 1fr;
-  gap:10px;
-  pointer-events:auto;
-}
-
-/* 데스크탑에서는 터치 HUD 숨김 */
-@media (min-width: 981px){
-  .touchHUD{display:none;}
-}
-
-/* 모바일 레이아웃 */
 @media (max-width: 980px){
-  .layout{grid-template-columns: 1fr; padding-bottom: 14px;}
-  .panel{order:2;}
-  .stage{order:1; min-height: 55vh;}
+  .touch{ display:flex; }
+  #game{ width:100vw; border-radius: 0; border-left:0; border-right:0; }
 }
