@@ -85,8 +85,15 @@
   // ============================================================
   // BOSS GATE - Canvas2D (index.html 단일 파일 / 복붙 완전체)
   //
+  // ✅ FIX#1 공격/스킬(Z/X) 중 몬스터 겹침 시 위/아래 튐 제거
+  //   - 공격/스킬 중 겹침은 "데미지 없이, X축으로만 밀어내기"로 처리
+  //   - 접촉 피격(데미지)도 Y넉백 제거 (세로 튐 0)
+  //   - 공격 중 이동 잠금(칼만 움직이게) : attackLock
+  //
+  // ✅ FIX#2 일시정지 메뉴 길이 문제로 종료가 안 보이던 현상 해결
+  //   - 버튼 높이/간격 재설계 → 모바일에서도 '게임 종료' 항상 보임
+  //
   // ✅ 카메라 Y 완전 고정(위/아래 흔들림 제거)
-  // ✅ 공격/스킬(Z/X) 중 접촉 피격(튕김) 방지(contactGuard)
   // ✅ HUD ⚙ 메뉴 버튼 + 모바일 ⚙ 버튼
   // ✅ 메뉴 "게임 종료" → about:blank로 완전 탈출
   //
@@ -140,7 +147,7 @@
   }, { passive:false });
 
   // -------------------- Save --------------------
-  const SAVE_KEY = "boss_gate_web_v5_heal_auto_audio";
+  const SAVE_KEY = "boss_gate_web_v6_no_bounce_menu_fit";
   function save(state) { try { localStorage.setItem(SAVE_KEY, JSON.stringify(state)); } catch {} }
   function load() {
     try {
@@ -779,10 +786,17 @@
 
   // ---- Heal Tunings ----
   const POTION_MAX = 12;
-  const POTION_HEAL_PCT = 0.35;   // 35%
-  const POTION_CD = 8.0;          // seconds
-  const REGEN_DELAY = 5.0;        // seconds after last hit
-  const REGEN_RATE = 0.02;        // 2% max HP per second
+  const POTION_HEAL_PCT = 0.35;
+  const POTION_CD = 8.0;
+  const REGEN_DELAY = 5.0;
+  const REGEN_RATE = 0.02;
+
+  // ---- FIX: 공격/스킬 중 안정화 ----
+  const ATTACK_LOCK_ATK = 0.18;   // Z 누르면 잠깐 제자리 (칼만)
+  const ATTACK_LOCK_SKL = 0.24;   // X 누르면 조금 더
+  const CONTACT_GUARD_ATK = 0.46; // 공격 쿨보다 조금 길게 → 빈틈 제거
+  const CONTACT_GUARD_SKL = 0.62; // 스킬도 빈틈 제거
+  const CONTACT_SEP_STRENGTH = 0.70; // 겹침 시 X축 밀어내기 세기
 
   class Player {
     constructor() {
@@ -805,10 +819,13 @@
 
       this.contactGuard = 0;
 
+      // ✅ FIX: 공격 중 이동 잠금
+      this.attackLock = 0;
+
       // ✅ Heal System
       this.potions = 3;
       this.potionCd = 0;
-      this.noHitT = 999; // 전투 이탈 시간(피격 없던 시간)
+      this.noHitT = 999;
 
       this.anim = "idle";
       this.animT = 0;
@@ -948,7 +965,6 @@
     ctx.restore();
   }
 
-  // HUD 고정 버튼 영역
   const HUD_MENU_BTN = { x: 14+740+10, y: 14, w: 46, h: 46 };
   const HUD_POTION_BTN = { x: 14+740+10, y: 14+46+8, w: 46, h: 46 };
 
@@ -970,7 +986,7 @@
   function freshState(){
     const p = new Player();
     return {
-      ver: 5,
+      ver: 6,
       game: "보스게이트 (BOSS GATE)",
       createdAt: isoNow(),
       updatedAt: isoNow(),
@@ -1028,6 +1044,8 @@
     state.player.x = 220;
     state.player.y = GROUND_Y - 120;
     state.player.vx = 0; state.player.vy = 0;
+    state.player.attackLock = 0;
+    state.player.contactGuard = 0;
 
     state.camX = 0;
 
@@ -1090,7 +1108,6 @@
     state.msgT = 1.4;
   }
 
-  // ✅ 스테이지 클리어 보상(C: 자동 지급)
   function stageClearReward(state){
     const p = state.player;
     const before = p.potions;
@@ -1183,12 +1200,10 @@
     p.hp = clamp(p.hp + heal, 0, d.hpMax);
     p.potions -= 1;
     p.potionCd = POTION_CD;
-    p.noHitT = Math.max(p.noHitT, 0.0); // 사용해도 전투 이탈 판단은 그대로
 
-    // 소리/연출
     audio.playCoin();
-    state.dmgText.push(new DamageText(p.x, p.y - 72, `+${p.hp - before}`, "rgba(46,229,157,0.95)"));
-    state.msg = `포션 사용! (+${p.hp - before} HP)`;
+    state.dmgText.push(new DamageText(p.x, p.y - 72, `+${Math.floor(p.hp - before)}`, "rgba(46,229,157,0.95)"));
+    state.msg = `포션 사용! (+${Math.floor(p.hp - before)} HP)`;
     state.msgT = 1.1;
     save(state);
     return true;
@@ -1200,7 +1215,6 @@
     if (p.hp <= 0) return;
     if (p.hp >= d.hpMax) return;
 
-    // 피격 없던 시간이 충분할 때만 자동 회복
     if (p.noHitT >= REGEN_DELAY) {
       const heal = d.hpMax * REGEN_RATE * dt;
       p.hp = clamp(p.hp + heal, 0, d.hpMax);
@@ -1224,6 +1238,25 @@
     }
   }
 
+  // -------------------- FIX: 겹침 안정화(세로 튐 방지) --------------------
+  function stabilizeOverlapNoBounce(p, e){
+    const dx = (p.x - e.x);
+    const overlapX = (p.w/2 + e.w/2) - Math.abs(dx);
+    if (overlapX <= 0) return false;
+
+    const dir = dx === 0 ? (p.face || 1) : Math.sign(dx); // p가 e보다 오른쪽이면 +1
+    const push = overlapX * CONTACT_SEP_STRENGTH;
+
+    // X축으로만 분리 (Y/속도는 건드리지 않음)
+    p.x += dir * (push * 0.35);
+    e.x -= dir * (push * 0.65);
+
+    // 서로 겹쳐서 떨리는 느낌 줄이기 (가로 속도만 조금 완화)
+    p.vx *= 0.15;
+    e.vx *= 0.15;
+    return true;
+  }
+
   // -------------------- Gameplay Update --------------------
   function updatePlay(state, dt){
     const p = state.player;
@@ -1233,16 +1266,22 @@
     p.skillCd = Math.max(0, p.skillCd - dt);
     p.inv = Math.max(0, p.inv - dt);
     p.contactGuard = Math.max(0, p.contactGuard - dt);
+    p.attackLock = Math.max(0, p.attackLock - dt);
 
-    // ✅ Heal timers
     p.potionCd = Math.max(0, p.potionCd - dt);
     p.noHitT += dt;
 
-    // ✅ 전투 이탈 자동 회복
     applyRegen(state, dt);
 
     const ax = moveAxis();
-    p.vx = ax * d.spd * dt;
+
+    // ✅ FIX: 공격/스킬 직후 잠깐은 지상에서 이동 잠금(칼만 움직이게)
+    if (p.attackLock > 0 && p.onGround) {
+      p.vx = 0;
+    } else {
+      p.vx = ax * d.spd * dt;
+    }
+
     if (ax !== 0) p.face = ax > 0 ? 1 : -1;
 
     if (pressed.jump && p.onGround) {
@@ -1251,7 +1290,6 @@
     }
     pressed.jump = false;
 
-    // ✅ 포션(H / 🧪)
     if (pressed.potion) {
       tryUsePotion(state);
     }
@@ -1262,7 +1300,7 @@
 
     if (p.inv > 0) p.anim = "hurt";
     else if (!p.onGround) p.anim = "jump";
-    else if (Math.abs(ax) > 0.05) p.anim = "run";
+    else if (Math.abs(ax) > 0.05 && p.attackLock <= 0) p.anim = "run";
     else p.anim = "idle";
 
     p.animT += dt;
@@ -1272,7 +1310,10 @@
     if (pressed.atk && p.atkCd <= 0) {
       p.atkCd = 0.30;
       p.anim = "attack"; p.animT = 0;
-      p.contactGuard = Math.max(p.contactGuard, 0.22);
+
+      // ✅ FIX: 빈틈 제거 + 칼질 중 안정화
+      p.attackLock = Math.max(p.attackLock, ATTACK_LOCK_ATK);
+      p.contactGuard = Math.max(p.contactGuard, CONTACT_GUARD_ATK);
 
       const hx = p.x + p.face * 46;
       const hy = p.y - 10;
@@ -1287,7 +1328,6 @@
           e.hitCd = 0.12;
           hit++;
 
-          // ✅ 흡혈 적용
           applyLifesteal(state, dmg);
 
           spawnHitFX(state, e.x, e.y - 14);
@@ -1313,7 +1353,10 @@
       p.skillCd = 2.8;
       p.atkCd = 0.42;
       p.anim = "attack"; p.animT = 0;
-      p.contactGuard = Math.max(p.contactGuard, 0.30);
+
+      // ✅ FIX: 스킬 중 안정화 강화
+      p.attackLock = Math.max(p.attackLock, ATTACK_LOCK_SKL);
+      p.contactGuard = Math.max(p.contactGuard, CONTACT_GUARD_SKL);
 
       const hx = p.x + p.face * 78;
       const hy = p.y - 12;
@@ -1326,7 +1369,6 @@
           e.hp = clamp(e.hp - dmg, 0, e.hpMax);
           e.hitCd = 0.16;
 
-          // ✅ 흡혈 적용
           applyLifesteal(state, dmg);
 
           spawnHitFX(state, e.x, e.y - 14);
@@ -1346,7 +1388,7 @@
     }
     pressed.skill = false;
 
-    // 적 AI
+    // 적 AI + 접촉 처리
     for (const e of state.enemies) {
       if (e.dead) { e.dieT += dt; continue; }
       e.hitCd = Math.max(0, e.hitCd - dt);
@@ -1364,21 +1406,31 @@
       e.vy += 1100 * dt;
       collidePlatforms(e, state.platforms);
 
-      // 플레이어 접촉 피격(공격/스킬 중엔 무시)
-      if (p.inv <= 0 && p.contactGuard <= 0 &&
-          aabb(p.x - p.w/2, p.y - p.h/2, p.w, p.h, e.x - e.w/2, e.y - e.h/2, e.w, e.h)) {
+      const overlapped = aabb(
+        p.x - p.w/2, p.y - p.h/2, p.w, p.h,
+        e.x - e.w/2, e.y - e.h/2, e.w, e.h
+      );
+
+      // ✅ FIX: 공격/스킬 중엔 "데미지 없이 X축 분리"만 수행 → 세로 튐 0
+      if (overlapped && (p.attackLock > 0 || p.contactGuard > 0)) {
+        stabilizeOverlapNoBounce(p, e);
+      }
+
+      // 접촉 피격(데미지) - Y넉백 제거
+      if (overlapped && p.inv <= 0 && p.attackLock <= 0 && p.contactGuard <= 0) {
         const { dmg } = damageCalc(e.atk, d.def, 0, 1);
         p.hp = clamp(p.hp - dmg, 0, d.hpMax);
         p.inv = 0.55;
 
-        // ✅ 피격 처리: 자동회복 지연 타이머 리셋
+        // 피격 처리: 자동회복 지연
         p.noHitT = 0;
 
         audio.playHit();
         state.dmgText.push(new DamageText(p.x, p.y - 64, `-${dmg}`, "rgba(255,91,110,0.95)"));
 
-        p.vy = -220;
-        p.x += -e.face * 42;
+        // ✅ FIX: 세로 튐 제거 (vy 건드리지 않음)
+        // 대신 X축으로만 살짝 밀림
+        p.x += -e.face * 22;
 
         if (p.hp <= 0) {
           const lost = Math.round(p.gold * 0.08);
@@ -1448,9 +1500,7 @@
     if (state.door) {
       const d0 = state.door;
       if (aabb(p.x - p.w/2, p.y - p.h/2, p.w, p.h, d0.x, d0.y, d0.w, d0.h)) {
-        // ✅ 클리어 보상 먼저 지급
         stageClearReward(state);
-
         state.stageIndex += 1;
         state.player.stage = state.stageIndex;
         rebuildStage(state);
@@ -1558,7 +1608,6 @@
     ctx.fillStyle = "rgba(91,140,255,0.75)";
     ctx.fillRect(30, 54, 300*(1-sc), 10);
 
-    // 포션 쿨바
     const pc = clamp(p.potionCd / POTION_CD, 0, 1);
     ctx.fillStyle = "rgba(255,255,255,0.08)";
     ctx.fillRect(30, 70, 300, 10);
@@ -1580,7 +1629,6 @@
                     pointer.y>=HUD_POTION_BTN.y && pointer.y<=HUD_POTION_BTN.y+HUD_POTION_BTN.h);
     drawIconBtn(HUD_POTION_BTN.x, HUD_POTION_BTN.y, HUD_POTION_BTN.w, HUD_POTION_BTN.h, "🧪", hotPot);
 
-    // 포션 수량 작은 배지
     ctx.save();
     ctx.globalAlpha = 0.95;
     ctx.fillStyle = "rgba(0,0,0,0.35)";
@@ -1751,27 +1799,41 @@
     try { location.replace("about:blank"); } catch { location.href = "about:blank"; }
   }
 
+  // ✅ FIX: PAUSE 메뉴 버튼이 항상 화면 안에 들어오도록 재배치
   function drawPause(state){
     drawScene(state, true);
-    panel(VIEW_W*0.5-260, VIEW_H*0.5-205, 520, 430, "일시정지 / 메뉴");
 
-    const bx = VIEW_W*0.5-180, by = VIEW_H*0.5-135, bw=360, bh=52;
+    const px = VIEW_W*0.5-260;
+    const py = 70;
+    const pw = 520;
+    const ph = 400;
+    panel(px, py, pw, ph, "일시정지 / 메뉴");
 
-    btn(bx, by, bw, bh, "재개", true);
-    btn(bx, by+64, bw, bh, "인벤토리", true);
-    btn(bx, by+128, bw, bh, "상점(포션 구매)", true);
-    btn(bx, by+192, bw, bh, "옵션", false);
-    btn(bx, by+256, bw, bh, "저장 후 타이틀로", false);
-    btn(bx, by+320, bw, bh, "저장 삭제", false);
-    btn(bx, by+384, bw, bh, "게임 종료(완전 탈출)", true);
+    const bx = VIEW_W*0.5-190;
+    const by = py + 54;
+    const bw = 380;
+    const bh = 46;
+    const gap = 10;
 
-    if (hitBtn(bx,by,bw,bh)) state.gs = "PLAY";
-    if (hitBtn(bx,by+64,bw,bh)) state.gs = "INVENTORY";
-    if (hitBtn(bx,by+128,bw,bh)) state.gs = "SHOP";
-    if (hitBtn(bx,by+192,bw,bh)) state.gs = "OPTIONS";
-    if (hitBtn(bx,by+256,bw,bh)) { save(state); state.gs="MENU"; state.msg="저장 완료. 타이틀로 이동."; state.msgT=1.5; }
-    if (hitBtn(bx,by+320,bw,bh)) { localStorage.removeItem(SAVE_KEY); state.msg="저장 삭제 완료."; state.msgT=1.5; }
-    if (hitBtn(bx,by+384,bw,bh)) { hardExitNow(); state.gs="EXIT"; }
+    const items = [
+      { t:"재개", hot:true, fn:()=> state.gs="PLAY" },
+      { t:"인벤토리", hot:true, fn:()=> state.gs="INVENTORY" },
+      { t:"상점(포션 구매)", hot:true, fn:()=> state.gs="SHOP" },
+      { t:"옵션", hot:false, fn:()=> state.gs="OPTIONS" },
+      { t:"저장 후 타이틀로", hot:false, fn:()=> { save(state); state.gs="MENU"; state.msg="저장 완료. 타이틀로 이동."; state.msgT=1.5; } },
+      { t:"저장 삭제", hot:false, fn:()=> { localStorage.removeItem(SAVE_KEY); state.msg="저장 삭제 완료."; state.msgT=1.5; } },
+      { t:"게임 종료(완전 탈출)", hot:true, fn:()=> { hardExitNow(); state.gs="EXIT"; } },
+    ];
+
+    for (let i=0;i<items.length;i++){
+      const y = by + i*(bh+gap);
+      btn(bx, y, bw, bh, items[i].t, items[i].hot);
+      if (hitBtn(bx, y, bw, bh)) items[i].fn();
+    }
+
+    ctx.fillStyle = "rgba(235,240,255,0.60)";
+    ctx.font = "12px ui-monospace, Menlo, Consolas";
+    ctx.fillText("ESC/P 또는 ⚙ 버튼으로 메뉴 열기/닫기", bx, py + ph - 18);
 
     if (pressed.menu) { pressed.menu = false; state.gs = "PLAY"; }
   }
@@ -1794,7 +1856,7 @@
 
     btn(bx, by, bw, bh, `포션 1개 구매 (${price}G)`, true);
     btn(bx, by+76, bw, bh, `포션 5개 구매 (${price*5}G)`, true);
-    btn(bx, by+152, bw, bh, "무료 안내: 문(게이트) 통과 시 포션도 보상으로 줌", false);
+    btn(bx, by+152, bw, bh, `안내: 문(게이트) 통과 시 포션도 보상으로 지급`, false);
     btn(bx, by+228, bw, bh, "뒤로가기", true);
 
     if (hitBtn(bx,by,bw,bh)) {
@@ -1830,6 +1892,9 @@
   }
 
   function drawInventory(state){
+    // 인벤/감정/뽑기는 이전 버전과 동일하게 유지(요청사항 변경 없음)
+    // → 길어서 여기서 생략하지 않고, 아래 revive 포함해서 정상 동작
+    // (인벤 UI는 drawScene에 오버레이로 표시)
     drawScene(state, true);
     panel(VIEW_W*0.5-370, VIEW_H*0.5-230, 740, 460, "인벤토리 / 장비(감정)");
 
@@ -1956,11 +2021,11 @@
     st.player.equip ??= { weapon:null, armor:null, ring:null };
     for (const s of SLOTS) st.player.equip[s] = st.player.equip[s] || null;
 
-    // ✅ heal defaults
     st.player.potions = (raw.player?.potions ?? st.player.potions);
     st.player.potionCd = (raw.player?.potionCd ?? 0);
     st.player.noHitT = (raw.player?.noHitT ?? 999);
-    st.player.contactGuard ??= 0;
+    st.player.contactGuard = (raw.player?.contactGuard ?? 0);
+    st.player.attackLock = (raw.player?.attackLock ?? 0);
 
     st.stageIndex = raw.stageIndex ?? st.stageIndex;
     st.inBossRoom = raw.inBossRoom ?? st.inBossRoom;
