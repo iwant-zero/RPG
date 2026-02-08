@@ -7,9 +7,16 @@
   const rand = (a, b) => Math.floor(Math.random() * (b - a + 1)) + a;
   const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
   const nowISO = () => new Date().toISOString();
+  const todayKey = () => {
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth()+1).padStart(2,"0");
+    const dd = String(d.getDate()).padStart(2,"0");
+    return `${y}-${m}-${dd}`;
+  };
 
   // ----------------- Storage -----------------
-  const SAVE_KEY = "action_canvas_rpg_v2_stage_auto_sprite";
+  const SAVE_KEY = "action_canvas_rpg_v3_auto_stage_chest_daily_ach_set_appraise";
 
   function loadSave() {
     try {
@@ -24,45 +31,10 @@
     localStorage.setItem(SAVE_KEY, JSON.stringify(state));
   }
 
-  // ----------------- Data -----------------
+  // ----------------- World -----------------
   const WORLD = { w: 2400, h: 1400 };
 
-  const ITEM_SLOTS = ["weapon", "armor", "ring"];
-  const ITEM_NAMES = {
-    weapon: ["녹슨 검","철검","흑철검","마나 블레이드","폭풍창","처형자의 대검"],
-    armor:  ["가죽 갑옷","사슬 갑옷","강철 갑옷","룬 코트","수호의 판금","용린 갑주"],
-    ring:   ["동 반지","은 반지","마력 반지","집중의 반지","파괴의 반지","왕의 반지"]
-  };
-
-  const RARITY = [
-    { key:"N",   name:"일반", w:60, mult:1.00 },
-    { key:"R",   name:"희귀", w:28, mult:1.18 },
-    { key:"SR",  name:"영웅", w:10, mult:1.40 },
-    { key:"SSR", name:"전설", w: 2, mult:1.85 }
-  ];
-
-  const ENEMY_NAME = {
-    normal: ["슬라임","늑대","고블린","스켈레톤"],
-    elite:  ["광폭 늑대","고블린 주술사","해골 기사","저주받은 갑옷"],
-    boss:   ["슬라임 킹","폐허의 리치","철갑 와이번","심연의 기사단장"]
-  };
-
-  // 스테이지 규칙:
-  // - 챕터는 1-1 ~ 1-10, 2-1 ~ 2-10 식으로 표시(10스테이지마다 챕터 증가)
-  // - 매 5스테이지(…-5, …-10) 클리어 문은 "보스 문" 생성 → 보스 처치 시 다음 스테이지로 진행
-  // - 일반 스테이지: 처치 목표 달성 시 "다음 문" 생성
-  function stageLabel(stageIndex) {
-    const chapter = Math.floor((stageIndex - 1) / 10) + 1;
-    const step = ((stageIndex - 1) % 10) + 1;
-    return `${chapter}-${step}`;
-  }
-  function isBossStage(stageIndex) {
-    const step = ((stageIndex - 1) % 10) + 1;
-    return (step === 5 || step === 10);
-  }
-
   // ----------------- Sprites (PNG optional) -----------------
-  // assets 폴더에 PNG 있으면 자동 사용, 없으면 도형으로 fallback
   const SPR = {
     player: new Image(),
     enemy_normal: new Image(),
@@ -71,9 +43,7 @@
     coin: new Image(),
     item: new Image(),
     portal: new Image(),
-    ok: {
-      player:false, enemy_normal:false, enemy_elite:false, enemy_boss:false, coin:false, item:false, portal:false
-    }
+    ok: { player:false, enemy_normal:false, enemy_elite:false, enemy_boss:false, coin:false, item:false, portal:false }
   };
 
   function loadSprite(img, key, src) {
@@ -81,7 +51,6 @@
     img.onerror = () => { SPR.ok[key] = false; };
     img.src = src;
   }
-
   function initSprites() {
     loadSprite(SPR.player, "player", "./assets/player.png");
     loadSprite(SPR.enemy_normal, "enemy_normal", "./assets/enemy_normal.png");
@@ -92,12 +61,95 @@
     loadSprite(SPR.portal, "portal", "./assets/portal.png");
   }
 
-  // ----------------- State -----------------
+  // ----------------- Game Data -----------------
+  const ITEM_SLOTS = ["weapon", "armor", "ring"];
+  const ITEM_NAMES = {
+    weapon: ["녹슨 검","철검","흑철검","마나 블레이드","폭풍창","처형자의 대검"],
+    armor:  ["가죽 갑옷","사슬 갑옷","강철 갑옷","룬 코트","수호의 판금","용린 갑주"],
+    ring:   ["동 반지","은 반지","마력 반지","집중의 반지","파괴의 반지","왕의 반지"]
+  };
+
+  const RARITY = [
+    { key:"N",   name:"일반", w:60, mult:1.00, opt:0 },
+    { key:"R",   name:"희귀", w:28, mult:1.18, opt:1 },
+    { key:"SR",  name:"영웅", w:10, mult:1.40, opt:2 },
+    { key:"SSR", name:"전설", w: 2, mult:1.85, opt:2 }
+  ];
+
+  const ENEMY_NAME = {
+    normal: ["슬라임","늑대","고블린","스켈레톤"],
+    elite:  ["광폭 늑대","고블린 주술사","해골 기사","저주받은 갑옷"],
+    boss:   ["슬라임 킹","폐허의 리치","철갑 와이번","심연의 기사단장"]
+  };
+
+  // 세트 효과(2/3세트)
+  const SETS = [
+    {
+      key: "WOLF", name: "늑대 세트",
+      two: { speed: 18, crit: 4 },
+      three: { atkPct: 8, lifesteal: 2 }
+    },
+    {
+      key: "BONE", name: "해골 세트",
+      two: { defPct: 8, hpPct: 8 },
+      three: { atkPct: 6, crit: 6 }
+    },
+    {
+      key: "ABYSS", name: "심연 세트",
+      two: { atkPct: 10 },
+      three: { atkPct: 10, crit: 8, speed: 12 }
+    }
+  ];
+
+  // 랜덤 옵션(감정 시 해방)
+  // type: "flat" | "pct"
+  const AFFIX = [
+    { key:"atkFlat", name:"공격력", type:"flat", min:1, max:6, weight:22 },
+    { key:"defFlat", name:"방어력", type:"flat", min:1, max:5, weight:22 },
+    { key:"hpFlat",  name:"체력",   type:"flat", min:6, max:22, weight:18 },
+    { key:"crit",    name:"치명",   type:"flat", min:1, max:7, weight:12 },
+    { key:"speed",   name:"이속",   type:"flat", min:6, max:18, weight:10 },
+    { key:"atkPct",  name:"공격%",  type:"pct",  min:2, max:10, weight:8 },
+    { key:"defPct",  name:"방어%",  type:"pct",  min:2, max:10, weight:5 },
+    { key:"hpPct",   name:"체력%",  type:"pct",  min:3, max:12, weight:5 },
+    { key:"lifesteal", name:"흡혈", type:"flat", min:1, max:4, weight:3 }
+  ];
+
+  function weightedPick(list) {
+    const total = list.reduce((s,x)=>s + (x.weight ?? 1), 0);
+    let r = Math.random() * total;
+    for (const x of list) {
+      r -= (x.weight ?? 1);
+      if (r <= 0) return x;
+    }
+    return list[0];
+  }
+
+  // ----------------- Stage System -----------------
+  function stageLabel(stageIndex) {
+    const chapter = Math.floor((stageIndex - 1) / 10) + 1;
+    const step = ((stageIndex - 1) % 10) + 1;
+    return `${chapter}-${step}`;
+  }
+  function isBossStage(stageIndex) {
+    const step = ((stageIndex - 1) % 10) + 1;
+    return (step === 5 || step === 10);
+  }
+  function stageDifficulty(stageIndex) {
+    return Math.floor((stageIndex - 1) / 2);
+  }
+  function computeStageGoal(stageIndex) {
+    const diff = stageDifficulty(stageIndex);
+    return clamp(8 + diff, 8, 22);
+  }
+
+  // ----------------- ID -----------------
   function cryptoId() {
     if (crypto?.randomUUID) return crypto.randomUUID();
     return "id-" + Math.random().toString(16).slice(2) + "-" + Date.now().toString(16);
   }
 
+  // ----------------- Item Generation -----------------
   function rollRarity() {
     const total = RARITY.reduce((s, r) => s + r.w, 0);
     let r = Math.random() * total;
@@ -106,6 +158,28 @@
       if (r <= 0) return it;
     }
     return RARITY[0];
+  }
+
+  function rollSet(rarityKey) {
+    // 희귀 이상에서 세트 확률 점증
+    const p = (rarityKey === "N") ? 0.12 : (rarityKey === "R" ? 0.30 : (rarityKey === "SR" ? 0.55 : 0.75));
+    if (Math.random() > p) return null;
+    return pick(SETS).key;
+  }
+
+  function rollAffixes(count) {
+    const got = [];
+    const used = new Set();
+    let tries = 0;
+    while (got.length < count && tries < 30) {
+      tries++;
+      const a = weightedPick(AFFIX);
+      if (used.has(a.key)) continue;
+      used.add(a.key);
+      const val = rand(a.min, a.max);
+      got.push({ key: a.key, name: a.name, type: a.type, value: val });
+    }
+    return got;
   }
 
   function makeItem(slot, playerLevel) {
@@ -120,6 +194,19 @@
     if (slot === "ring")  { crit = rand(1, 4); atk = rand(1, 3); }
 
     const mult = rar.mult * (1 + (ilvl - 1) * 0.04);
+    const baseStats = {
+      atk: Math.round(atk * mult),
+      def: Math.round(def * mult),
+      hp:  Math.round(hp  * mult),
+      crit: Math.round(crit * mult)
+    };
+
+    const setKey = rollSet(rar.key);
+
+    // 감정: 처음엔 미감정(identified=false). 미감정도 기본성능 사용 가능.
+    const affixCount = rar.opt;         // 희귀 이상 옵션 존재
+    const hiddenAffixes = (affixCount > 0) ? rollAffixes(affixCount) : [];
+
     return {
       id: cryptoId(),
       slot,
@@ -128,12 +215,11 @@
       name: baseName,
       ilvl,
       enhance,
-      stats: {
-        atk: Math.round(atk * mult),
-        def: Math.round(def * mult),
-        hp:  Math.round(hp  * mult),
-        crit: Math.round(crit * mult)
-      },
+      setKey,                // null | "WOLF" | ...
+      identified: (rar.key === "N") ? true : false,   // 일반은 감정 없이도 OK로 가볍게
+      hiddenAffixes,         // 감정 전 보관
+      affixes: [],           // 감정 후 공개
+      stats: baseStats,
       locked: false,
       createdAt: nowISO()
     };
@@ -141,12 +227,31 @@
 
   function itemPower(it) {
     const s = it.stats;
-    return (s.atk*2) + (s.def*2) + (s.hp*0.6) + (s.crit*1.5) + (it.enhance*6) + (it.ilvl*2);
-  }
-  function itemLabel(it) {
-    return `[${it.rarity}] +${it.enhance} ${it.name}(Lv${it.ilvl}) PWR ${Math.round(itemPower(it))}`;
+    const aff = it.identified ? it.affixes : [];
+    // 대충 파워: 기본 + 강화 + 옵션
+    let p = (s.atk*2) + (s.def*2) + (s.hp*0.6) + (s.crit*1.5) + (it.enhance*6) + (it.ilvl*2);
+    for (const a of aff) {
+      if (a.key === "atkFlat") p += a.value*3;
+      if (a.key === "defFlat") p += a.value*3;
+      if (a.key === "hpFlat") p += a.value*0.8;
+      if (a.key === "crit") p += a.value*2.0;
+      if (a.key === "speed") p += a.value*0.8;
+      if (a.key === "atkPct") p += a.value*4;
+      if (a.key === "defPct") p += a.value*3.5;
+      if (a.key === "hpPct") p += a.value*3.0;
+      if (a.key === "lifesteal") p += a.value*6;
+    }
+    if (it.setKey) p += 14;
+    return p;
   }
 
+  function itemLabel(it) {
+    const idt = it.identified ? "" : " (미감정)";
+    const set = it.setKey ? ` <${it.setKey}>` : "";
+    return `[${it.rarity}] +${it.enhance} ${it.name}${idt}(Lv${it.ilvl})${set} PWR ${Math.round(itemPower(it))}`;
+  }
+
+  // 강화
   function enhanceCost(it) {
     const base = 35 + it.ilvl * 8;
     const step = (it.enhance + 1);
@@ -168,22 +273,35 @@
     it.stats.crit= Math.round(it.stats.crit * (1 + e * 0.03));
   }
 
+  // 감정(아이템 1개)
+  function appraiseItem(it) {
+    if (it.identified) return false;
+    it.identified = true;
+    it.affixes = it.hiddenAffixes.slice();
+    it.hiddenAffixes = [];
+    return true;
+  }
+
+  function setName(key) {
+    const s = SETS.find(x=>x.key===key);
+    return s ? s.name : "";
+  }
+
+  // ----------------- State -----------------
   function freshState() {
     const st = {
-      version: 2,
+      version: 3,
       createdAt: nowISO(),
       updatedAt: nowISO(),
       paused: false,
 
-      // 스테이지 시스템
       inTown: true,
-      stageIndex: 1,        // 1부터
+      stageIndex: 1,
       inBossRoom: false,
       stageKills: 0,
-      stageGoal: 8,         // 스테이지 시작 시 계산
+      stageGoal: computeStageGoal(1),
 
-      // 포탈(문)
-      portal: null,         // { kind:"next"|"boss"|"exit", x,y,r }
+      portal: null,
 
       cam: { x: 0, y: 0, shake: 0 },
 
@@ -191,7 +309,8 @@
         enabled: false,
         target: true,
         attack: true,
-        pickup: true
+        pickup: true,
+        move: true
       },
 
       player: {
@@ -199,7 +318,8 @@
         level: 1,
         exp: 0,
         expToNext: 25,
-        gold: 80,
+        gold: 120,
+        gems: 0,            // 미션/업적용
         potions: 3,
 
         hpMaxBase: 70,
@@ -219,28 +339,85 @@
         streak: 0
       },
 
+      // 상자(보상)
+      chests: { normal: 0, boss: 0 },
+
+      // 일일 미션
+      daily: {
+        dayKey: todayKey(),
+        tasks: [],        // [{id,title,goal,progress,rewardGold,rewardGems,claimed}]
+        claimedCount: 0
+      },
+
+      // 업적(영구)
+      achievements: {
+        // id: {progress, goal, claimed}
+        map: {}
+      },
+
       equip: { weapon:null, armor:null, ring:null },
       inv: [],
       entities: [],
       drops: [],
-      stats: { kills:0, bosses:0, gacha:0, enhanced:0 }
+
+      stats: { kills:0, bosses:0, stages:0, gacha:0, enhanced:0, appraised:0 }
     };
 
+    // starter gear
     st.inv.push(makeItem("weapon", 1));
     st.inv.push(makeItem("armor", 1));
     st.inv.push(makeItem("ring", 1));
 
+    // daily init
+    resetDailyIfNeeded(st);
+    initAchievementsIfNeeded(st);
+
     return st;
+  }
+
+  // ----------------- Derived Stats (옵션 + 세트 포함) -----------------
+  function collectSetCounts(state) {
+    const cnt = {};
+    for (const slot of ITEM_SLOTS) {
+      const it = state.equip[slot];
+      if (!it || !it.setKey) continue;
+      cnt[it.setKey] = (cnt[it.setKey] ?? 0) + 1;
+    }
+    return cnt;
+  }
+
+  function applyBonus(bonus, acc) {
+    if (!bonus) return;
+    // flat
+    if (bonus.atk) acc.atk += bonus.atk;
+    if (bonus.def) acc.def += bonus.def;
+    if (bonus.hp)  acc.hp += bonus.hp;
+    if (bonus.crit) acc.crit += bonus.crit;
+    if (bonus.speed) acc.speed += bonus.speed;
+    if (bonus.lifesteal) acc.lifesteal += bonus.lifesteal;
+
+    // pct
+    if (bonus.atkPct) acc.atkPct += bonus.atkPct;
+    if (bonus.defPct) acc.defPct += bonus.defPct;
+    if (bonus.hpPct)  acc.hpPct += bonus.hpPct;
   }
 
   function calcPlayerDerived(state) {
     const p = state.player;
     const eq = state.equip;
+
+    // base
     let hpMax = p.hpMaxBase;
     let atk = p.atkBase;
     let def = p.defBase;
     let crit = p.critBase;
+    let speed = p.speed;
+    let lifesteal = 0;
 
+    // pct accum
+    let atkPct = 0, defPct = 0, hpPct = 0;
+
+    // equip base stats
     for (const s of ITEM_SLOTS) {
       const it = eq[s];
       if (!it) continue;
@@ -248,12 +425,58 @@
       def += it.stats.def || 0;
       hpMax += it.stats.hp || 0;
       crit += it.stats.crit || 0;
+
+      // affixes only if identified
+      if (it.identified) {
+        for (const a of it.affixes) {
+          if (a.key === "atkFlat") atk += a.value;
+          if (a.key === "defFlat") def += a.value;
+          if (a.key === "hpFlat") hpMax += a.value;
+          if (a.key === "crit") crit += a.value;
+          if (a.key === "speed") speed += a.value;
+          if (a.key === "atkPct") atkPct += a.value;
+          if (a.key === "defPct") defPct += a.value;
+          if (a.key === "hpPct") hpPct += a.value;
+          if (a.key === "lifesteal") lifesteal += a.value;
+        }
+      }
     }
+
+    // set bonuses
+    const cnt = collectSetCounts(state);
+    const setBonusAcc = { atk:0, def:0, hp:0, crit:0, speed:0, lifesteal:0, atkPct:0, defPct:0, hpPct:0 };
+    for (const setKey of Object.keys(cnt)) {
+      const n = cnt[setKey];
+      const set = SETS.find(x=>x.key===setKey);
+      if (!set) continue;
+      if (n >= 2) applyBonus(set.two, setBonusAcc);
+      if (n >= 3) applyBonus(set.three, setBonusAcc);
+    }
+
+    atk += setBonusAcc.atk;
+    def += setBonusAcc.def;
+    hpMax += setBonusAcc.hp;
+    crit += setBonusAcc.crit;
+    speed += setBonusAcc.speed;
+    lifesteal += setBonusAcc.lifesteal;
+
+    atkPct += setBonusAcc.atkPct;
+    defPct += setBonusAcc.defPct;
+    hpPct  += setBonusAcc.hpPct;
+
+    // apply pct at end
+    atk = Math.round(atk * (1 + atkPct/100));
+    def = Math.round(def * (1 + defPct/100));
+    hpMax = Math.round(hpMax * (1 + hpPct/100));
+
     crit = clamp(crit, 0, 60);
-    return { hpMax, atk, def, crit };
+    speed = clamp(speed, 120, 260);
+    lifesteal = clamp(lifesteal, 0, 12);
+
+    return { hpMax, atk, def, crit, speed, lifesteal, atkPct, defPct, hpPct, setCounts: cnt };
   }
 
-  // ----------------- Canvas / Viewport -----------------
+  // ----------------- Canvas -----------------
   const canvas = $("game");
   const ctx = canvas.getContext("2d", { alpha: false });
 
@@ -265,26 +488,22 @@
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
 
-  // ----------------- Input (PC + Mobile) -----------------
+  // ----------------- Input -----------------
   const keys = new Set();
   let wantAttack=false, wantSkill=false, wantDodge=false, wantPotion=false, wantPickup=false;
 
   window.addEventListener("keydown", (e) => {
     const k = e.key.toLowerCase();
-    if (["arrowup","arrowdown","arrowleft","arrowright"," ","shift","w","a","s","d","j","k","l","h","e"].includes(k)) {
-      e.preventDefault();
-    }
+    if (["arrowup","arrowdown","arrowleft","arrowright"," ","shift","w","a","s","d","j","k","l","h","e"].includes(k)) e.preventDefault();
     keys.add(k);
     if (k === "j" || k === " ") wantAttack = true;
     if (k === "k") wantSkill = true;
     if (k === "l" || k === "shift") wantDodge = true;
     if (k === "h") wantPotion = true;
     if (k === "e") wantPickup = true;
-  }, { passive: false });
+  }, { passive:false });
 
-  window.addEventListener("keyup", (e) => {
-    keys.delete(e.key.toLowerCase());
-  });
+  window.addEventListener("keyup", (e) => keys.delete(e.key.toLowerCase()));
 
   function bindTap(btnId, onPress) {
     const el = $(btnId);
@@ -295,12 +514,7 @@
   // Virtual Joystick
   const joy = $("joy");
   const joyStick = $("joyStick");
-  const joyState = {
-    active: false,
-    pid: null,
-    cx: 0, cy: 0,
-    x: 0, y: 0
-  };
+  const joyState = { active:false, pid:null, cx:0, cy:0, x:0, y:0 };
 
   function joySetStick(dx, dy) {
     const maxR = 52;
@@ -363,57 +577,12 @@
       .replaceAll("'","&#039;");
   }
 
-  // ----------------- Stage / Spawns -----------------
-  function computeStageGoal(state) {
-    const s = state.stageIndex;
-    const diff = Math.floor((s-1)/2); // 완만 증가
-    return clamp(8 + diff, 8, 22);
-  }
-
-  function stageDifficulty(state) {
-    const s = state.stageIndex;
-    const diff = Math.floor((s-1)/2);
-    return diff;
-  }
-
-  function spawnStage(state) {
-    state.entities.length = 0;
-    state.drops.length = 0;
-    state.portal = null;
-
-    state.stageKills = 0;
-    state.stageGoal = computeStageGoal(state);
-
-    const p = state.player;
-    p.x = WORLD.w/2;
-    p.y = WORLD.h/2;
-
-    if (state.inTown) return;
-
-    if (state.inBossRoom) {
-      // 보스 1마리
-      const e = makeEnemy(state, "boss");
-      state.entities.push(e);
-      log(`보스 방 진입! (${stageLabel(state.stageIndex)})`, "dim");
-      return;
-    }
-
-    // 일반 스테이지: normal / elite 혼합
-    const diff = stageDifficulty(state);
-    const baseCount = clamp(6 + Math.floor(diff*0.6), 6, 14);
-    for (let i=0;i<baseCount;i++){
-      const tier = (Math.random() < 0.18) ? "elite" : "normal";
-      state.entities.push(makeEnemy(state, tier));
-    }
-    log(`스테이지 시작: ${stageLabel(state.stageIndex)}  (목표 ${state.stageGoal}처치)`, "dim");
-  }
-
+  // ----------------- Spawns -----------------
   function makeEnemy(state, tier) {
     const p = state.player;
-    const diff = stageDifficulty(state);
+    const diff = stageDifficulty(state.stageIndex);
     const lv = Math.max(1, p.level + Math.floor(diff/2) + rand(-1, 2));
     const mult = (tier==="boss") ? 2.6 : (tier==="elite" ? 1.35 : 1.0);
-
     const name = pick(ENEMY_NAME[tier]);
     const r = (tier==="boss") ? 36 : 22;
 
@@ -438,42 +607,65 @@
     return e;
   }
 
-  function maybeSpawnPortal(state) {
-    if (state.portal) return;
+  function spawnStage(state) {
+    state.entities.length = 0;
+    state.drops.length = 0;
+    state.portal = null;
+
+    state.stageKills = 0;
+    state.stageGoal = computeStageGoal(state.stageIndex);
+
+    const p = state.player;
+    p.x = WORLD.w/2; p.y = WORLD.h/2;
+
     if (state.inTown) return;
 
-    // 보스방이면 보스 처치 후 exit portal
+    if (state.inBossRoom) {
+      state.entities.push(makeEnemy(state, "boss"));
+      log(`보스 방 진입! (${stageLabel(state.stageIndex)})`, "dim");
+      return;
+    }
+
+    const diff = stageDifficulty(state.stageIndex);
+    const baseCount = clamp(6 + Math.floor(diff*0.6), 6, 14);
+    for (let i=0;i<baseCount;i++){
+      const tier = (Math.random() < 0.18) ? "elite" : "normal";
+      state.entities.push(makeEnemy(state, tier));
+    }
+    log(`스테이지 시작: ${stageLabel(state.stageIndex)} (목표 ${state.stageGoal}처치)`, "dim");
+  }
+
+  // ----------------- Portal -----------------
+  function makePortal(kind) {
+    return { kind, x: rand(220, WORLD.w-220), y: rand(220, WORLD.h-220), r: 34 };
+  }
+
+  function maybeSpawnPortal(state) {
+    if (state.portal || state.inTown) return;
+
     if (state.inBossRoom) {
       const alive = state.entities.some(e => e.hp > 0);
       if (!alive) {
         state.portal = makePortal("exit");
-        log("보스 처치! 출구 문이 열렸다.", "dim");
+        // 보스 상자 + 추가 보상
+        state.chests.boss += 1;
+        log("보스 처치! 보스 상자 + 출구 문 생성.", "dim");
+        onStageClear(state, true);
       }
       return;
     }
 
-    // 일반 스테이지: 목표 처치 달성 시 portal 생성
     if (state.stageKills >= state.stageGoal) {
-      // 다음이 보스 스테이지면 "보스 문" 생성
-      const nextStage = state.stageIndex;
-      const bossNext = isBossStage(nextStage);
+      const bossNext = isBossStage(state.stageIndex);
       state.portal = makePortal(bossNext ? "boss" : "next");
-      log(bossNext ? "보스 문이 나타났다!" : "다음 문이 나타났다!", "dim");
+      state.chests.normal += 1; // 스테이지 상자
+      log(bossNext ? "보스 문이 나타났다! (보상 상자 획득)" : "다음 문이 나타났다! (보상 상자 획득)", "dim");
+      onStageClear(state, false);
     }
-  }
-
-  function makePortal(kind) {
-    return {
-      kind, // "next" | "boss" | "exit"
-      x: rand(220, WORLD.w-220),
-      y: rand(220, WORLD.h-220),
-      r: 34
-    };
   }
 
   function enterPortal(state) {
     if (!state.portal) return;
-
     const kind = state.portal.kind;
 
     if (kind === "boss") {
@@ -483,7 +675,6 @@
     }
 
     if (kind === "exit") {
-      // 보스 클리어 → 다음 스테이지로 진행
       state.inBossRoom = false;
       state.stageIndex += 1;
       spawnStage(state);
@@ -495,20 +686,28 @@
     spawnStage(state);
   }
 
-  // ----------------- Drops / Loot -----------------
+  function checkPortalCollision(state) {
+    if (!state.portal) return;
+    const p = state.player;
+    const d = Math.hypot(state.portal.x - p.x, state.portal.y - p.y);
+    if (d <= (state.portal.r + 22)) {
+      log("문 진입!", "dim");
+      enterPortal(state);
+    }
+  }
+
+  // ----------------- Drops -----------------
   function dropCoin(state, x, y, amount) {
     state.drops.push({ id: cryptoId(), kind:"coin", x, y, r: 10, amount });
   }
-
   function dropEquip(state, x, y) {
-    const slot = pick(ITEM_SLOTS);
-    const it = makeItem(slot, state.player.level);
+    const it = makeItem(pick(ITEM_SLOTS), state.player.level);
     state.drops.push({ id: cryptoId(), kind:"equip", x, y, r: 12, item: it });
     log(`드랍: ${itemLabel(it)}`, "dim");
   }
 
   // ----------------- Combat -----------------
-  function dealDamage(baseAtk, def, base, critChance) {
+  function dealDamage(def, base, critChance) {
     let dmg = base;
     const isCrit = (Math.random()*100) < critChance;
     if (isCrit) dmg = Math.round(dmg * 1.65);
@@ -518,8 +717,8 @@
 
   function playerAttack(state, mode) {
     const p = state.player;
-    if (p.atkCd > 0) return;
-    if (state.inTown) return;
+    if (p.atkCd > 0) return false;
+    if (state.inTown) return false;
 
     const der = calcPlayerDerived(state);
     const range = (mode === "skill") ? 125 : 72;
@@ -527,11 +726,10 @@
     const base = (mode === "skill") ? Math.round(der.atk * 1.95) : Math.round(der.atk * 1.08);
 
     if (mode === "skill") {
-      if (p.skillCd > 0) return;
+      if (p.skillCd > 0) return false;
       p.skillCd = 3.2;
       p.atkCd = 0.28;
       cameraShake(state, 7);
-      log("스킬 발동!", "dim");
     } else {
       p.atkCd = 0.22;
     }
@@ -553,15 +751,20 @@
       const ang = Math.acos(dot);
       if (ang > arc/2) continue;
 
-      const { dmg, isCrit } = dealDamage(der.atk, e.def, base + rand(-2, 3), der.crit);
+      const { dmg, isCrit } = dealDamage(e.def, base + rand(-2, 3), der.crit);
       e.hp = clamp(e.hp - dmg, 0, e.hpMax);
       e.hitCd = 0.08;
       hitAny = true;
 
+      // 흡혈(원거리X, 근접 판정이라 바로 적용)
+      if (der.lifesteal > 0) {
+        const heal = Math.max(1, Math.round(dmg * (der.lifesteal/100)));
+        p.hp = clamp(p.hp + heal, 1, der.hpMax);
+      }
+
       if (mode === "skill") {
-        const k = 0.95;
-        e.x += nx * (40 * k);
-        e.y += ny * (40 * k);
+        e.x += nx * 38;
+        e.y += ny * 38;
       }
       if (isCrit) cameraShake(state, 4);
 
@@ -569,30 +772,6 @@
     }
 
     return hitAny;
-  }
-
-  function onEnemyDead(state, e) {
-    const p = state.player;
-    state.stats.kills += 1;
-    if (e.tier === "boss") state.stats.bosses += 1;
-
-    p.streak += 1;
-    state.stageKills += 1;
-
-    // rewards
-    const diff = stageDifficulty(state);
-    const baseGold = 18 + e.level*6 + (e.tier==="elite" ? 32 : 0) + (e.tier==="boss" ? 220 : 0) + diff*6;
-    const gold = Math.round(baseGold * (1 + Math.min(p.streak, 10) * 0.03));
-    dropCoin(state, e.x, e.y, gold);
-
-    const dropChance = (e.tier==="boss") ? 0.90 : (e.tier==="elite" ? 0.48 : 0.23);
-    if (Math.random() < dropChance) dropEquip(state, e.x + rand(-10,10), e.y + rand(-10,10));
-
-    const exp = Math.round(10 + e.level*5 + (e.tier==="elite" ? 18 : 0) + (e.tier==="boss" ? 90 : 0) + diff*3);
-    gainExp(state, exp);
-
-    // 스테이지 문 생성 체크
-    maybeSpawnPortal(state);
   }
 
   function gainExp(state, amount) {
@@ -618,18 +797,51 @@
     p.hp = der.hpMax;
     cameraShake(state, 10);
     log(`레벨업! Lv.${p.level}`, "dim");
+
+    // 업적 진행
+    bumpAchievement(state, "LEVEL", 1);
+  }
+
+  function onEnemyDead(state, e) {
+    const p = state.player;
+    state.stats.kills += 1;
+    if (e.tier === "boss") state.stats.bosses += 1;
+
+    p.streak += 1;
+    state.stageKills += 1;
+
+    // rewards
+    const diff = stageDifficulty(state.stageIndex);
+    const baseGold = 18 + e.level*6 + (e.tier==="elite" ? 32 : 0) + (e.tier==="boss" ? 220 : 0) + diff*6;
+    const gold = Math.round(baseGold * (1 + Math.min(p.streak, 10) * 0.03));
+    dropCoin(state, e.x, e.y, gold);
+
+    const dropChance = (e.tier==="boss") ? 0.90 : (e.tier==="elite" ? 0.48 : 0.23);
+    if (Math.random() < dropChance) dropEquip(state, e.x + rand(-10,10), e.y + rand(-10,10));
+
+    const exp = Math.round(10 + e.level*5 + (e.tier==="elite" ? 18 : 0) + (e.tier==="boss" ? 90 : 0) + diff*3);
+    gainExp(state, exp);
+
+    // daily / achievement progress
+    dailyProgress(state, "KILL", 1);
+    bumpAchievement(state, "KILL", 1);
+    if (e.tier === "boss") {
+      dailyProgress(state, "BOSS", 1);
+      bumpAchievement(state, "BOSS", 1);
+    }
+
+    maybeSpawnPortal(state);
   }
 
   function playerUsePotion(state) {
     const p = state.player;
     const der = calcPlayerDerived(state);
     if (p.potions <= 0) { log("포션이 없다.", "dim"); return; }
-    if (p.hp >= der.hpMax) { return; }
-
+    if (p.hp >= der.hpMax) return;
     p.potions -= 1;
     const amount = Math.round(der.hpMax * 0.45) + rand(6, 12);
     p.hp = clamp(p.hp + amount, 1, der.hpMax);
-    log(`포션 사용: +${amount}HP (남은 포션 ${p.potions})`, "dim");
+    log(`포션 사용: +${amount}HP`, "dim");
   }
 
   function playerDodge(state) {
@@ -709,15 +921,14 @@
     p.gold = Math.max(0, p.gold - lost);
     p.hp = 1;
     p.streak = 0;
-    log(`쓰러졌다… ${lost}G를 잃고 마을로 후퇴.`, "dim");
+    log(`쓰러졌다… ${lost}G 잃고 마을로 후퇴.`, "dim");
     goTown(state);
   }
 
-  // ----------------- Pickup / Drops -----------------
+  // ----------------- Pickup -----------------
   function pickupNearby(state) {
     const p = state.player;
     let picked = 0;
-
     for (let i = state.drops.length - 1; i >= 0; i--) {
       const d = state.drops[i];
       const dist = Math.hypot(d.x - p.x, d.y - p.y);
@@ -733,30 +944,29 @@
         state.drops.splice(i, 1);
       }
     }
-
     if (picked > 0) log(`줍기: ${picked}개`, "dim");
   }
 
-  function checkPortalCollision(state) {
-    if (!state.portal) return;
-    const p = state.player;
-    const d = Math.hypot(state.portal.x - p.x, state.portal.y - p.y);
-    if (d <= (state.portal.r + 22)) {
-      log("문 진입!", "dim");
-      enterPortal(state);
-    }
-  }
-
-  // ----------------- Auto Hunt (Target/Attack/Pickup) -----------------
+  // ----------------- Auto Hunt (오토 이동/추적/공격/줍기/문) -----------------
   function nearestEnemy(state, maxDist=900) {
     const p = state.player;
     let best = null;
     let bestD = maxDist;
-
     for (const e of state.entities) {
       if (e.hp <= 0) continue;
       const d = Math.hypot(e.x - p.x, e.y - p.y);
       if (d < bestD) { bestD = d; best = e; }
+    }
+    return best;
+  }
+
+  function nearestDrop(state, maxDist=550) {
+    const p = state.player;
+    let best = null;
+    let bestD = maxDist;
+    for (const d of state.drops) {
+      const dist = Math.hypot(d.x - p.x, d.y - p.y);
+      if (dist < bestD) { bestD = dist; best = d; }
     }
     return best;
   }
@@ -766,37 +976,229 @@
     if (!a.enabled) return;
     if (state.inTown) return;
 
-    // 오토 줍기
+    // 자동 줍기
     if (a.pickup) pickupNearby(state);
 
-    // 오토 타겟 + 오토 공격
-    const target = a.target ? nearestEnemy(state, 700) : null;
-    if (!target) return;
-
     const p = state.player;
-    const dx = target.x - p.x;
-    const dy = target.y - p.y;
-    const dist = Math.hypot(dx, dy) || 1;
 
-    // 타겟 바라보기
-    p.facing.x = dx / dist;
-    p.facing.y = dy / dist;
+    // 1) 적이 있으면 적을 우선 추적
+    const target = a.target ? nearestEnemy(state, 900) : null;
+    if (target) {
+      const dx = target.x - p.x;
+      const dy = target.y - p.y;
+      const dist = Math.hypot(dx, dy) || 1;
 
-    // 스킬 조건: 보스/엘리트면 쿨되면 우선
-    if (a.attack) {
-      if (p.skillCd <= 0 && (target.tier === "boss" || target.tier === "elite")) {
-        wantSkill = true;
-        return;
+      // 바라보기
+      p.facing.x = dx / dist;
+      p.facing.y = dy / dist;
+
+      // 오토 이동(붙기)
+      if (a.move && dist > (78 + target.r)) {
+        // 이동 입력을 강제로 만들어서 update에서 움직이게 함
+        // (조이스틱/키 입력과 합치지 않고, 오토용 별도 벡터로 처리)
+        state._autoMove = { x: p.facing.x, y: p.facing.y };
+      } else {
+        state._autoMove = null;
       }
 
-      // 일반 공격: 거리 가까우면
-      if (dist <= (80 + target.r) && p.atkCd <= 0) {
-        wantAttack = true;
+      // 오토 공격
+      if (a.attack) {
+        if (p.skillCd <= 0 && (target.tier === "boss" || target.tier === "elite")) {
+          wantSkill = true;
+        } else if (dist <= (82 + target.r) && p.atkCd <= 0) {
+          wantAttack = true;
+        }
+      }
+      return;
+    }
+
+    // 2) 적이 없으면 드랍/문 우선
+    state._autoMove = null;
+
+    // 문이 있으면 문으로 이동
+    if (state.portal && a.move) {
+      const dx = state.portal.x - p.x;
+      const dy = state.portal.y - p.y;
+      const dist = Math.hypot(dx, dy) || 1;
+      p.facing.x = dx / dist; p.facing.y = dy / dist;
+      state._autoMove = { x: p.facing.x, y: p.facing.y };
+      return;
+    }
+
+    // 드랍이 있으면 드랍으로 이동
+    const d = nearestDrop(state, 650);
+    if (d && a.move) {
+      const dx = d.x - p.x;
+      const dy = d.y - p.y;
+      const dist = Math.hypot(dx, dy) || 1;
+      p.facing.x = dx / dist; p.facing.y = dy / dist;
+      state._autoMove = { x: p.facing.x, y: p.facing.y };
+    }
+  }
+
+  // ----------------- Town / Stage -----------------
+  function goTown(state) {
+    state.inTown = true;
+    state.inBossRoom = false;
+    state.portal = null;
+    state.entities.length = 0;
+    state.drops.length = 0;
+
+    const p = state.player;
+    p.x = WORLD.w/2; p.y = WORLD.h/2;
+
+    const der = calcPlayerDerived(state);
+    p.hp = der.hpMax;
+    p.atkCd = 0; p.skillCd = 0; p.dodgeCd = 0;
+
+    // 일일 리셋 체크(마을 들어오면도 체크)
+    resetDailyIfNeeded(state);
+  }
+
+  function enterStage(state) {
+    state.inTown = false;
+    state.inBossRoom = false;
+    spawnStage(state);
+  }
+
+  // ----------------- Rewards: Chest / Daily / Achievements -----------------
+  function openOneChest(state, kind) {
+    const p = state.player;
+    if (kind === "boss") {
+      if (state.chests.boss <= 0) return false;
+      state.chests.boss -= 1;
+
+      // 보스 상자: 골드+젬+장비2
+      const g = 220 + p.level*30 + stageDifficulty(state.stageIndex)*15;
+      const gem = 2 + Math.floor(p.level/10);
+      p.gold += g;
+      p.gems += gem;
+
+      state.inv.push(makeItem(pick(ITEM_SLOTS), p.level + 1));
+      state.inv.push(makeItem(pick(ITEM_SLOTS), p.level + 1));
+
+      log(`보스 상자 오픈! +${g}G +${gem}💎 +장비2`, "dim");
+      dailyProgress(state, "CHEST", 1);
+      bumpAchievement(state, "CHEST", 1);
+      return true;
+    } else {
+      if (state.chests.normal <= 0) return false;
+      state.chests.normal -= 1;
+
+      const g = 90 + p.level*12 + stageDifficulty(state.stageIndex)*8;
+      p.gold += g;
+
+      // 일반 상자: 장비 0~1 확률
+      if (Math.random() < 0.45) state.inv.push(makeItem(pick(ITEM_SLOTS), p.level));
+
+      log(`상자 오픈! +${g}G`, "dim");
+      dailyProgress(state, "CHEST", 1);
+      bumpAchievement(state, "CHEST", 1);
+      return true;
+    }
+  }
+
+  function onStageClear(state, bossClear) {
+    state.stats.stages += 1;
+    dailyProgress(state, "STAGE", 1);
+    bumpAchievement(state, "STAGE", 1);
+    if (bossClear) bumpAchievement(state, "BOSS_CLEAR", 1);
+  }
+
+  function resetDailyIfNeeded(state) {
+    const tk = todayKey();
+    if (!state.daily) {
+      state.daily = { dayKey: tk, tasks: [], claimedCount: 0 };
+    }
+    if (state.daily.dayKey !== tk) {
+      state.daily.dayKey = tk;
+      state.daily.claimedCount = 0;
+      state.daily.tasks = [];
+    }
+    if (state.daily.tasks.length === 0) {
+      // 오늘 미션 생성(고정 3개 + 가끔 4개)
+      state.daily.tasks = [
+        { id:"KILL",  title:"몬스터 40마리 처치", goal:40, progress:0, rewardGold:220, rewardGems:0, claimed:false },
+        { id:"STAGE", title:"스테이지 6회 클리어", goal:6,  progress:0, rewardGold:260, rewardGems:1, claimed:false },
+        { id:"CHEST", title:"상자 5개 열기",     goal:5,  progress:0, rewardGold:180, rewardGems:1, claimed:false },
+      ];
+      // 보스 미션은 확률로
+      if (Math.random() < 0.55) {
+        state.daily.tasks.push({ id:"BOSS", title:"보스 1회 처치", goal:1, progress:0, rewardGold:260, rewardGems:2, claimed:false });
       }
     }
   }
 
-  // ----------------- Inventory / Shop -----------------
+  function dailyProgress(state, id, amount) {
+    resetDailyIfNeeded(state);
+    const t = state.daily.tasks.find(x => x.id === id);
+    if (!t || t.claimed) return;
+    t.progress = clamp(t.progress + amount, 0, t.goal);
+  }
+
+  function claimDaily(state) {
+    resetDailyIfNeeded(state);
+    let claimed = 0;
+    for (const t of state.daily.tasks) {
+      if (t.claimed) continue;
+      if (t.progress >= t.goal) {
+        t.claimed = true;
+        state.player.gold += t.rewardGold;
+        state.player.gems += t.rewardGems;
+        claimed++;
+      }
+    }
+    if (claimed > 0) log(`일일 미션 수령: ${claimed}개`, "dim");
+    else log("수령 가능한 일일 보상이 없다.", "dim");
+  }
+
+  function initAchievementsIfNeeded(state) {
+    state.achievements ??= { map: {} };
+    const map = state.achievements.map;
+
+    // 목표치(영구)
+    const defs = [
+      { id:"KILL", title:"누적 처치 500", goal:500, rewardGems:5, rewardGold:0 },
+      { id:"BOSS", title:"보스 20회 처치", goal:20, rewardGems:8, rewardGold:0 },
+      { id:"STAGE", title:"스테이지 100회 클리어", goal:100, rewardGems:10, rewardGold:0 },
+      { id:"CHEST", title:"상자 80개 오픈", goal:80, rewardGems:6, rewardGold:0 },
+      { id:"LEVEL", title:"레벨 30 달성", goal:30, rewardGems:12, rewardGold:0 },
+      { id:"BOSS_CLEAR", title:"보스방 클리어 30회", goal:30, rewardGems:10, rewardGold:0 },
+      { id:"APPRAISE", title:"감정 60회", goal:60, rewardGems:6, rewardGold:0 },
+      { id:"ENHANCE", title:"강화 성공 30회", goal:30, rewardGems:6, rewardGold:0 }
+    ];
+
+    state._achDefs = defs; // UI용
+    for (const d of defs) {
+      if (!map[d.id]) map[d.id] = { progress:0, goal:d.goal, claimed:false, title:d.title, rewardGems:d.rewardGems, rewardGold:d.rewardGold };
+    }
+  }
+
+  function bumpAchievement(state, id, amount) {
+    initAchievementsIfNeeded(state);
+    const a = state.achievements.map[id];
+    if (!a || a.claimed) return;
+    a.progress = clamp(a.progress + amount, 0, a.goal);
+  }
+
+  function claimAchievements(state) {
+    initAchievementsIfNeeded(state);
+    let claimed = 0;
+    for (const id of Object.keys(state.achievements.map)) {
+      const a = state.achievements.map[id];
+      if (a.claimed) continue;
+      if (a.progress >= a.goal) {
+        a.claimed = true;
+        state.player.gold += (a.rewardGold ?? 0);
+        state.player.gems += (a.rewardGems ?? 0);
+        claimed++;
+      }
+    }
+    if (claimed > 0) log(`업적 보상 수령: ${claimed}개`, "dim");
+    else log("수령 가능한 업적 보상이 없다.", "dim");
+  }
+
+  // ----------------- Inventory / Equip / Shop -----------------
   function autoEquip(state) {
     for (const slot of ITEM_SLOTS) {
       const candidates = state.inv.filter(it => it.slot === slot);
@@ -868,10 +1270,11 @@
     const cost = 90 + p.level * 6;
     if (p.gold < cost) { log(`골드 부족. (뽑기 ${cost}G)`, "dim"); return; }
     p.gold -= cost;
-    const slot = pick(ITEM_SLOTS);
-    const it = makeItem(slot, p.level + 1);
+
+    const it = makeItem(pick(ITEM_SLOTS), p.level + 1);
     state.inv.push(it);
     state.stats.gacha += 1;
+
     log(`뽑기: ${itemLabel(it)} (-${cost}G)`, "dim");
   }
 
@@ -893,38 +1296,40 @@
       applyEnhance(target);
       state.stats.enhanced += 1;
       log(`강화 성공! +${target.enhance} (${target.name})`, "dim");
+      bumpAchievement(state, "ENHANCE", 1);
+      dailyProgress(state, "ENHANCE", 1);
     } else {
       log(`강화 실패… (확률 ${Math.round(chance*100)}%)`, "dim");
     }
   }
 
-  // ----------------- Town / Enter Stage -----------------
-  function goTown(state) {
-    state.inTown = true;
-    state.inBossRoom = false;
-    state.portal = null;
-    state.entities.length = 0;
-    state.drops.length = 0;
+  // 감정(마을에서만, 미감정 장비 1개당 비용)
+  function appraiseAll(state) {
+    if (!state.inTown) { log("감정은 마을에서만 가능.", "dim"); return; }
 
-    const p = state.player;
-    p.x = WORLD.w/2;
-    p.y = WORLD.h/2;
+    const targets = state.inv.filter(it => !it.identified);
+    if (targets.length === 0) { log("감정할 미감정 아이템이 없다.", "dim"); return; }
 
-    // 마을 회복 느낌(양산형)
-    const der = calcPlayerDerived(state);
-    p.hp = der.hpMax;
-    p.atkCd = 0;
-    p.skillCd = 0;
-    p.dodgeCd = 0;
+    let count = 0;
+    let costSum = 0;
+
+    for (const it of targets) {
+      const cost = 40 + it.ilvl * 6 + (it.rarity === "SSR" ? 120 : it.rarity === "SR" ? 70 : it.rarity === "R" ? 45 : 0);
+      if (state.player.gold < cost) break;
+      state.player.gold -= cost;
+      costSum += cost;
+      if (appraiseItem(it)) {
+        count++;
+        state.stats.appraised += 1;
+        bumpAchievement(state, "APPRAISE", 1);
+      }
+    }
+
+    if (count > 0) log(`감정 완료: ${count}개 (-${costSum}G)`, "dim");
+    else log("골드 부족으로 감정을 진행하지 못했다.", "dim");
   }
 
-  function enterStage(state) {
-    state.inTown = false;
-    state.inBossRoom = false;
-    spawnStage(state);
-  }
-
-  // ----------------- Camera / Effects -----------------
+  // ----------------- Camera -----------------
   function cameraShake(state, strength) {
     state.cam.shake = Math.max(state.cam.shake, strength);
   }
@@ -938,48 +1343,6 @@
     return false;
   }
 
-  function draw(state, dt) {
-    const p = state.player;
-    const der = calcPlayerDerived(state);
-
-    const viewW = canvas.getBoundingClientRect().width;
-    const viewH = canvas.getBoundingClientRect().height;
-
-    if (state.cam.shake > 0) state.cam.shake = Math.max(0, state.cam.shake - dt * 18);
-    const sx = (Math.random()-0.5) * state.cam.shake;
-    const sy = (Math.random()-0.5) * state.cam.shake;
-
-    const camX = clamp(p.x - viewW/2, 0, WORLD.w - viewW) + sx;
-    const camY = clamp(p.y - viewH/2, 0, WORLD.h - viewH) + sy;
-    state.cam.x = camX; state.cam.y = camY;
-
-    // background by mode
-    const bg = state.inTown ? "#0e1628" : (state.inBossRoom ? "#220f16" : "#0d1b17");
-    ctx.fillStyle = bg;
-    ctx.fillRect(0, 0, viewW, viewH);
-
-    drawGrid(viewW, viewH, camX, camY);
-    drawVignette(viewW, viewH);
-
-    // portal
-    if (state.portal) drawPortal(state.portal, camX, camY);
-
-    // drops
-    for (const d of state.drops) drawDrop(d, camX, camY);
-
-    // enemies
-    for (const e of state.entities) if (e.hp > 0) drawEnemy(e, camX, camY);
-
-    // player
-    drawPlayer(p, der, camX, camY);
-
-    // UI on canvas
-    drawTopBars(state, der, viewW);
-
-    // portal collision check (문 가까이 가면 자동 진입)
-    checkPortalCollision(state);
-  }
-
   function drawGrid(w, h, camX, camY) {
     const step = 80;
     ctx.globalAlpha = 0.18;
@@ -990,14 +1353,8 @@
     const startY = -((camY % step) + step);
 
     ctx.beginPath();
-    for (let x = startX; x < w + step; x += step) {
-      ctx.moveTo(x, 0);
-      ctx.lineTo(x, h);
-    }
-    for (let y = startY; y < h + step; y += step) {
-      ctx.moveTo(0, y);
-      ctx.lineTo(w, y);
-    }
+    for (let x = startX; x < w + step; x += step) { ctx.moveTo(x, 0); ctx.lineTo(x, h); }
+    for (let y = startY; y < h + step; y += step) { ctx.moveTo(0, y); ctx.lineTo(w, y); }
     ctx.stroke();
     ctx.globalAlpha = 1;
   }
@@ -1010,41 +1367,10 @@
     ctx.fillRect(0,0,w,h);
   }
 
-  function drawTopBars(state, der, w) {
-    const p = state.player;
-    const hpPct = clamp(p.hp / der.hpMax, 0, 1);
-    const expPct = clamp(p.exp / p.expToNext, 0, 1);
-
-    ctx.globalAlpha = 0.85;
-    ctx.fillStyle = "rgba(0,0,0,0.28)";
-    ctx.fillRect(12, 12, Math.min(620, w-24), 66);
-    ctx.globalAlpha = 1;
-
-    ctx.fillStyle = "rgba(255,255,255,0.10)";
-    ctx.fillRect(22, 26, 300, 14);
-    ctx.fillStyle = "rgba(46,229,157,0.85)";
-    ctx.fillRect(22, 26, 300*hpPct, 14);
-
-    ctx.fillStyle = "rgba(255,255,255,0.08)";
-    ctx.fillRect(22, 46, 300, 10);
-    ctx.fillStyle = "rgba(91,140,255,0.75)";
-    ctx.fillRect(22, 46, 300*expPct, 10);
-
-    ctx.fillStyle = "rgba(233,238,252,0.95)";
-    ctx.font = "12px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono','Courier New', monospace";
-
-    const stageText = state.inTown ? "마을" : (state.inBossRoom ? `보스방(${stageLabel(state.stageIndex)})` : `스테이지 ${stageLabel(state.stageIndex)}`);
-    const goalText = state.inTown ? "" : (state.inBossRoom ? "보스 처치 후 출구" : `처치 ${state.stageKills}/${state.stageGoal}`);
-
-    ctx.fillText(`${stageText} | ${goalText}`, 334, 36);
-    ctx.fillText(`Lv.${p.level} HP ${p.hp}/${der.hpMax} EXP ${p.exp}/${p.expToNext}  ${p.gold}G  P${p.potions}  AUTO:${state.auto.enabled?"ON":"OFF"}`, 334, 56);
-  }
-
   function drawPortal(portal, camX, camY) {
     const x = portal.x - camX;
     const y = portal.y - camY;
 
-    // glow
     ctx.globalAlpha = 0.35;
     ctx.fillStyle = (portal.kind === "boss") ? "rgba(255,91,110,0.7)" : "rgba(91,140,255,0.7)";
     ctx.beginPath();
@@ -1068,7 +1394,10 @@
     ctx.fillText(label, x-18, y-portal.r-10);
   }
 
-  function drawPlayer(p, der, camX, camY) {
+  function drawPlayer(state, camX, camY) {
+    const p = state.player;
+    const der = calcPlayerDerived(state);
+
     const x = p.x - camX;
     const y = p.y - camY;
 
@@ -1090,7 +1419,6 @@
       ctx.fill();
     }
 
-    // facing indicator
     ctx.globalAlpha = 1;
     ctx.strokeStyle = "rgba(233,238,252,0.85)";
     ctx.lineWidth = 2;
@@ -1098,6 +1426,13 @@
     ctx.moveTo(x, y);
     ctx.lineTo(x + p.facing.x*22, y + p.facing.y*22);
     ctx.stroke();
+
+    // 작은 상태 텍스트(흡혈)
+    if (der.lifesteal > 0) {
+      ctx.fillStyle = "rgba(233,238,252,0.85)";
+      ctx.font = "11px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono','Courier New', monospace";
+      ctx.fillText(`LS ${der.lifesteal}%`, x-18, y-28);
+    }
   }
 
   function drawEnemy(e, camX, camY) {
@@ -1170,6 +1505,67 @@
     }
   }
 
+  function drawTopBars(state, w) {
+    const p = state.player;
+    const der = calcPlayerDerived(state);
+    const hpPct = clamp(p.hp / der.hpMax, 0, 1);
+    const expPct = clamp(p.exp / p.expToNext, 0, 1);
+
+    ctx.globalAlpha = 0.85;
+    ctx.fillStyle = "rgba(0,0,0,0.28)";
+    ctx.fillRect(12, 12, Math.min(690, w-24), 74);
+    ctx.globalAlpha = 1;
+
+    ctx.fillStyle = "rgba(255,255,255,0.10)";
+    ctx.fillRect(22, 26, 320, 14);
+    ctx.fillStyle = "rgba(46,229,157,0.85)";
+    ctx.fillRect(22, 26, 320*hpPct, 14);
+
+    ctx.fillStyle = "rgba(255,255,255,0.08)";
+    ctx.fillRect(22, 46, 320, 10);
+    ctx.fillStyle = "rgba(91,140,255,0.75)";
+    ctx.fillRect(22, 46, 320*expPct, 10);
+
+    ctx.fillStyle = "rgba(233,238,252,0.95)";
+    ctx.font = "12px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono','Courier New', monospace";
+
+    const stageText = state.inTown ? "마을" : (state.inBossRoom ? `보스방(${stageLabel(state.stageIndex)})` : `스테이지 ${stageLabel(state.stageIndex)}`);
+    const goalText = state.inTown ? "" : (state.inBossRoom ? "보스 처치 → 출구" : `처치 ${state.stageKills}/${state.stageGoal}`);
+    ctx.fillText(`${stageText} | ${goalText}`, 354, 36);
+    ctx.fillText(`Lv.${p.level} HP ${p.hp}/${der.hpMax} EXP ${p.exp}/${p.expToNext}  ${p.gold}G  💎${p.gems}  P${p.potions}  AUTO:${state.auto.enabled?"ON":"OFF"}`, 354, 56);
+    ctx.fillText(`ATK ${der.atk} DEF ${der.def} CRIT ${der.crit}% SPD ${der.speed} (세트/옵션 반영)`, 354, 74);
+  }
+
+  function draw(state, dt) {
+    const p = state.player;
+
+    const viewW = canvas.getBoundingClientRect().width;
+    const viewH = canvas.getBoundingClientRect().height;
+
+    if (state.cam.shake > 0) state.cam.shake = Math.max(0, state.cam.shake - dt * 18);
+    const sx = (Math.random()-0.5) * state.cam.shake;
+    const sy = (Math.random()-0.5) * state.cam.shake;
+
+    const camX = clamp(p.x - viewW/2, 0, WORLD.w - viewW) + sx;
+    const camY = clamp(p.y - viewH/2, 0, WORLD.h - viewH) + sy;
+    state.cam.x = camX; state.cam.y = camY;
+
+    const bg = state.inTown ? "#0e1628" : (state.inBossRoom ? "#220f16" : "#0d1b17");
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, viewW, viewH);
+
+    drawGrid(viewW, viewH, camX, camY);
+    drawVignette(viewW, viewH);
+
+    if (state.portal) drawPortal(state.portal, camX, camY);
+    for (const d of state.drops) drawDrop(d, camX, camY);
+    for (const e of state.entities) if (e.hp > 0) drawEnemy(e, camX, camY);
+    drawPlayer(state, camX, camY);
+    drawTopBars(state, viewW);
+
+    checkPortalCollision(state);
+  }
+
   // ----------------- Movement / Update -----------------
   function currentMoveX() {
     let x = 0;
@@ -1185,7 +1581,6 @@
     if (Math.abs(joyState.y) > 0.05) y += joyState.y;
     return clamp(y, -1, 1);
   }
-
   function isTouchDevice() {
     return matchMedia("(max-width: 980px)").matches;
   }
@@ -1193,22 +1588,38 @@
   function update(state, dt) {
     if (state.paused) return;
 
+    resetDailyIfNeeded(state);
+    initAchievementsIfNeeded(state);
+
     const p = state.player;
     const der = calcPlayerDerived(state);
+
+    // 반영: 이속은 파생치 기반
+    p.speed = der.speed;
 
     p.invuln = Math.max(0, p.invuln - dt);
     p.dodgeCd = Math.max(0, p.dodgeCd - dt);
     p.atkCd = Math.max(0, p.atkCd - dt);
     p.skillCd = Math.max(0, p.skillCd - dt);
 
-    // Auto logic first (sets facing / wants)
+    // Auto logic (sets state._autoMove + wants)
+    state._autoMove = null;
     autoLogic(state);
 
-    // movement
-    const mx = currentMoveX();
-    const my = currentMoveY();
-    const len = Math.hypot(mx, my);
+    // movement input mix: (유저 입력 + 오토 입력)
+    let mx = currentMoveX();
+    let my = currentMoveY();
 
+    // 오토 이동이 켜져있으면, "유저 입력이 거의 없을 때" 오토가 우선
+    if (state.auto.enabled && state.auto.move && state._autoMove) {
+      const userLen = Math.hypot(mx, my);
+      if (userLen < 0.25) {
+        mx = state._autoMove.x;
+        my = state._autoMove.y;
+      }
+    }
+
+    const len = Math.hypot(mx, my);
     if (len > 0.01) {
       const nx = mx / len;
       const ny = my / len;
@@ -1230,25 +1641,58 @@
     if (wantPotion) { playerUsePotion(state);       wantPotion = false; }
     if (wantPickup) { pickupNearby(state);          wantPickup = false; }
 
-    // 모바일 편의: 자동 줍기(오토가 꺼져도 모바일은 편하게)
+    // 모바일 편의: 오토 OFF여도 가까우면 줍기
     if (isTouchDevice() && !state.auto.enabled) pickupNearby(state);
 
-    // enemy ai
     enemyAI(state, dt);
-
-    // portal spawn check
     maybeSpawnPortal(state);
 
-    // clamp hp
     p.hp = clamp(p.hp, 0, der.hpMax);
 
-    // enemy hitCd decay
-    for (const e of state.entities) {
-      if (e.hitCd > 0) e.hitCd -= dt;
-    }
+    for (const e of state.entities) if (e.hitCd > 0) e.hitCd -= dt;
   }
 
   // ----------------- Sidebar Render -----------------
+  function renderRewards(state) {
+    resetDailyIfNeeded(state);
+    initAchievementsIfNeeded(state);
+
+    const p = state.player;
+    const d = state.daily;
+    const ach = state.achievements.map;
+
+    const dailyLines = d.tasks.map(t => {
+      const done = (t.progress >= t.goal) ? "✓" : "";
+      const c = t.claimed ? "CLAIMED" : "";
+      return `- ${done} ${t.title} (${t.progress}/${t.goal}) ${c} [+${t.rewardGold}G +${t.rewardGems}💎]`;
+    }).join("\n");
+
+    // 업적: 완료 가능한 것만 상단에 보이게(너무 길어지니까 6개만)
+    const achArr = Object.keys(ach).map(k => ach[k]);
+    achArr.sort((a,b) => {
+      const ar = (a.claimed ? 2 : (a.progress>=a.goal ? 0 : 1));
+      const br = (b.claimed ? 2 : (b.progress>=b.goal ? 0 : 1));
+      if (ar !== br) return ar - br;
+      return (b.progress/b.goal) - (a.progress/a.goal);
+    });
+    const achLines = achArr.slice(0,6).map(a => {
+      const done = (a.progress >= a.goal) ? "✓" : "";
+      const c = a.claimed ? "CLAIMED" : "";
+      return `- ${done} ${a.title} (${a.progress}/${a.goal}) ${c} [+${a.rewardGold||0}G +${a.rewardGems||0}💎]`;
+    }).join("\n");
+
+    $("rewards").textContent = `
+상자: 일반 ${state.chests.normal} / 보스 ${state.chests.boss}
+재화: ${p.gold}G / 💎${p.gems}
+
+[일일 미션 - ${d.dayKey}]
+${dailyLines}
+
+[업적(상위 6개 표시)]
+${achLines}
+`.trim();
+  }
+
   function renderSidebar(state) {
     const p = state.player;
     const der = calcPlayerDerived(state);
@@ -1256,22 +1700,32 @@
     const stageText = state.inTown ? "마을" : (state.inBossRoom ? `보스방(${stageLabel(state.stageIndex)})` : `스테이지 ${stageLabel(state.stageIndex)}`);
     const goalText = state.inTown ? "" : (state.inBossRoom ? "보스 처치 → 출구" : `처치 ${state.stageKills}/${state.stageGoal}`);
 
-    const autoText = `AUTO: ${state.auto.enabled ? "ON" : "OFF"} (타겟/공격/줍기)`;
+    const setCounts = der.setCounts || {};
+    const setInfo = Object.keys(setCounts).length === 0
+      ? "세트: (없음)"
+      : "세트: " + Object.keys(setCounts).map(k => `${setName(k)} x${setCounts[k]}`).join(" | ");
 
     $("hud").textContent = `
 ${stageText}
 ${goalText}
-${autoText}
+AUTO: ${state.auto.enabled ? "ON" : "OFF"} (이동/추적/공격/줍기/문)
+
 레벨: ${p.level}  EXP: ${p.exp}/${p.expToNext}
 HP: ${p.hp}/${der.hpMax}  포션: ${p.potions}
-골드: ${p.gold}G  연속처치: ${p.streak}
-ATK: ${der.atk}  DEF: ${der.def}  CRIT: ${der.crit}%
-쿨: 공격 ${p.atkCd.toFixed(1)}s / 스킬 ${p.skillCd.toFixed(1)}s / 회피 ${p.dodgeCd.toFixed(1)}s
+골드: ${p.gold}G  💎: ${p.gems}
+ATK: ${der.atk}  DEF: ${der.def}  CRIT: ${der.crit}%  SPD: ${der.speed}
+흡혈: ${der.lifesteal}%
+${setInfo}
 `.trim();
 
     const eqLines = ITEM_SLOTS.map(slot => {
       const it = state.equip[slot];
-      return it ? `${slot.toUpperCase()}: ${itemLabel(it)}` : `${slot.toUpperCase()}: (없음)`;
+      if (!it) return `${slot.toUpperCase()}: (없음)`;
+      const set = it.setKey ? ` / ${setName(it.setKey)}` : "";
+      const aff = it.identified
+        ? (it.affixes.length ? ` / 옵션: ${it.affixes.map(a=>`${a.name}${a.type==="pct"?"%":""}+${a.value}`).join(", ")}` : "")
+        : " / 옵션: ??? (감정 필요)";
+      return `${slot.toUpperCase()}: ${itemLabel(it)}${set}${aff}`;
     }).join("\n");
     $("equip").textContent = eqLines;
 
@@ -1282,12 +1736,17 @@ ATK: ${der.atk}  DEF: ${der.def}  CRIT: ${der.crit}%
       invEl.innerHTML = `<div class="small">인벤이 비어있다.</div>`;
     } else {
       for (const it of inv) {
+        const affText = it.identified
+          ? (it.affixes.length ? it.affixes.map(a=>`${a.name}${a.type==="pct"?"%":""}+${a.value}`).join(", ") : "(옵션 없음)")
+          : "(옵션 ??? / 감정)";
+        const setText = it.setKey ? setName(it.setKey) : "-";
+
         const row = document.createElement("div");
         row.className = "item";
         row.innerHTML = `
           <div>
             <div class="name">${it.locked ? "🔒 " : ""}${escapeHtml(itemLabel(it))}</div>
-            <div class="meta">slot=${it.slot} | atk=${it.stats.atk} def=${it.stats.def} hp=${it.stats.hp} crit=${it.stats.crit}</div>
+            <div class="meta">set=${escapeHtml(setText)} | ${escapeHtml(affText)}</div>
           </div>
           <div class="actions">
             <button class="btn" data-act="equip" data-id="${it.id}">장착</button>
@@ -1298,6 +1757,8 @@ ATK: ${der.atk}  DEF: ${der.def}  CRIT: ${der.crit}%
         invEl.appendChild(row);
       }
     }
+
+    renderRewards(state);
   }
 
   // ----------------- Autosave -----------------
@@ -1328,10 +1789,7 @@ ATK: ${der.atk}  DEF: ${der.def}  CRIT: ${der.crit}%
 
     // Auto toggle
     const autoBtn = $("btnAuto");
-    function refreshAutoBtn(){
-      autoBtn.textContent = `자동사냥: ${state.auto.enabled ? "ON" : "OFF"}`;
-      autoBtn.classList.toggle("primary", !state.auto.enabled ? true : true); // 그대로 유지
-    }
+    const refreshAutoBtn = () => autoBtn.textContent = `자동사냥: ${state.auto.enabled ? "ON" : "OFF"}`;
     autoBtn.addEventListener("click", () => {
       state.auto.enabled = !state.auto.enabled;
       log(`자동사냥 ${state.auto.enabled ? "ON" : "OFF"}`, "dim");
@@ -1341,7 +1799,6 @@ ATK: ${der.atk}  DEF: ${der.def}  CRIT: ${der.crit}%
     });
     refreshAutoBtn();
 
-    // Town / Stage enter
     $("btnTown").addEventListener("click", () => {
       goTown(state);
       renderSidebar(state);
@@ -1357,7 +1814,29 @@ ATK: ${der.atk}  DEF: ${der.def}  CRIT: ${der.crit}%
 
     $("btnPortalHint").addEventListener("click", () => {
       if (!state.portal) { log("아직 문이 없다. 목표 처치를 채워라.", "dim"); return; }
-      log(`문 위치 힌트: (${Math.round(state.portal.x)}, ${Math.round(state.portal.y)})`, "dim");
+      log(`문 위치: (${Math.round(state.portal.x)}, ${Math.round(state.portal.y)})`, "dim");
+    });
+
+    // rewards
+    $("btnOpenChest").addEventListener("click", () => {
+      // 보스 상자 우선
+      const okBoss = openOneChest(state, "boss");
+      const okNorm = okBoss ? true : openOneChest(state, "normal");
+      if (!okBoss && !okNorm) log("열 수 있는 상자가 없다.", "dim");
+      renderSidebar(state);
+      autosave(state);
+    });
+
+    $("btnClaimDaily").addEventListener("click", () => {
+      claimDaily(state);
+      renderSidebar(state);
+      autosave(state);
+    });
+
+    $("btnClaimAch").addEventListener("click", () => {
+      claimAchievements(state);
+      renderSidebar(state);
+      autosave(state);
     });
 
     // inventory delegate
@@ -1401,6 +1880,12 @@ ATK: ${der.atk}  DEF: ${der.def}  CRIT: ${der.crit}%
       autosave(state);
     });
 
+    $("btnAppraise").addEventListener("click", () => {
+      appraiseAll(state);
+      renderSidebar(state);
+      autosave(state);
+    });
+
     // mobile buttons
     bindTap("btnAtk", () => wantAttack = true);
     bindTap("btnSkill", () => wantSkill = true);
@@ -1414,14 +1899,20 @@ ATK: ${der.atk}  DEF: ${der.def}  CRIT: ${der.crit}%
     initSprites();
 
     let state = loadSave();
-    if (!state || (state.version !== 2)) state = freshState();
+    if (!state || state.version !== 3) state = freshState();
 
-    // 안전 필드 보정(구버전 세이브 대비)
+    // safety for older partial saves (just in case)
     state.entities ??= [];
     state.drops ??= [];
     state.inv ??= [];
     state.equip ??= { weapon:null, armor:null, ring:null };
-    state.auto ??= { enabled:false, target:true, attack:true, pickup:true };
+    state.auto ??= { enabled:false, target:true, attack:true, pickup:true, move:true };
+    state.chests ??= { normal:0, boss:0 };
+    state.stats ??= { kills:0, bosses:0, stages:0, gacha:0, enhanced:0, appraised:0 };
+    state.player.gems ??= 0;
+
+    resetDailyIfNeeded(state);
+    initAchievementsIfNeeded(state);
 
     resizeCanvas();
     window.addEventListener("resize", () => resizeCanvas(), { passive:true });
