@@ -52,6 +52,7 @@
     }
     #b-left { left: 16px; bottom: 22px; }
     #b-right { left: 92px; bottom: 22px; }
+
     #b-jump { right: 16px; bottom: 96px; width: 70px; height: 70px; border-radius: 18px; font-size: 18px; }
     #b-atk { right: 96px; bottom: 22px; }
     #b-skill { right: 16px; bottom: 22px; }
@@ -85,28 +86,20 @@
   // ============================================================
   // BOSS GATE - Canvas2D (index.html 단일 파일 / 복붙 완전체)
   //
-  // ✅ FIX#1 공격/스킬(Z/X) 중 몬스터 겹침 시 위/아래 튐 제거
-  //   - 공격/스킬 중 겹침은 "데미지 없이, X축으로만 밀어내기"로 처리
-  //   - 접촉 피격(데미지)도 Y넉백 제거 (세로 튐 0)
-  //   - 공격 중 이동 잠금(칼만 움직이게) : attackLock
-  //
-  // ✅ FIX#2 일시정지 메뉴 길이 문제로 종료가 안 보이던 현상 해결
-  //   - 버튼 높이/간격 재설계 → 모바일에서도 '게임 종료' 항상 보임
+  // ✅ FIX(핵심): 몬스터가 공격 중 위/아래로 튀는 현상 제거
+  //   - 공격/스킬 중 겹침 발생 시 몬스터 vy=0 고정 + 바닥 스냅
+  //   - 몬스터 랜덤 점프: 근접 전투 시 발동하지 않게 조건/쿨 적용
   //
   // ✅ 카메라 Y 완전 고정(위/아래 흔들림 제거)
   // ✅ HUD ⚙ 메뉴 버튼 + 모바일 ⚙ 버튼
-  // ✅ 메뉴 "게임 종료" → about:blank로 완전 탈출
+  // ✅ 메뉴 '게임 종료'는 about:blank로 완전 탈출
   //
   // ✅ 오디오 확장자 자동 선택:
   //   /assets/bgm.(m4a|mp3|mp4)
   //   /assets/sfx_hit.(m4a|mp3|mp4)
   //   /assets/sfx_coin.(m4a|mp3|mp4)
   //
-  // ✅ HP 회복(사냥 중 피 채우기) 완제품:
-  //   1) 자동 회복: 피격 없으면 5초 뒤부터 초당 최대HP 2%
-  //   2) 포션: H / 🧪  (최대HP 35%) 쿨 8초
-  //   3) 흡혈(LS): 데미지 * LS% 회복
-  //   4) 포션 수급(C): 상점 구매 + 스테이지 클리어 보상
+  // ✅ HP 회복(자동회복+포션+흡혈)
   // ============================================================
 
   // -------------------- Canvas --------------------
@@ -147,7 +140,7 @@
   }, { passive:false });
 
   // -------------------- Save --------------------
-  const SAVE_KEY = "boss_gate_web_v6_no_bounce_menu_fit";
+  const SAVE_KEY = "boss_gate_web_v7_monster_no_vertical_bounce";
   function save(state) { try { localStorage.setItem(SAVE_KEY, JSON.stringify(state)); } catch {} }
   function load() {
     try {
@@ -791,12 +784,23 @@
   const REGEN_DELAY = 5.0;
   const REGEN_RATE = 0.02;
 
-  // ---- FIX: 공격/스킬 중 안정화 ----
-  const ATTACK_LOCK_ATK = 0.18;   // Z 누르면 잠깐 제자리 (칼만)
-  const ATTACK_LOCK_SKL = 0.24;   // X 누르면 조금 더
-  const CONTACT_GUARD_ATK = 0.46; // 공격 쿨보다 조금 길게 → 빈틈 제거
-  const CONTACT_GUARD_SKL = 0.62; // 스킬도 빈틈 제거
-  const CONTACT_SEP_STRENGTH = 0.70; // 겹침 시 X축 밀어내기 세기
+  // ---- Combat/Contact Tunings ----
+  const ATTACK_LOCK_ATK = 0.18;
+  const ATTACK_LOCK_SKL = 0.24;
+  const CONTACT_GUARD_ATK = 0.46;
+  const CONTACT_GUARD_SKL = 0.62;
+
+  const CONTACT_SEP_STRENGTH = 0.78;
+
+  // ---- NEW: 몬스터 바닥 스냅(세로 튐 제거 핵심) ----
+  function snapToGround(ent){
+    const gy = GROUND_Y - ent.h/2;
+    if (ent.y > gy) {
+      ent.y = gy;
+      ent.vy = 0;
+      ent.onGround = true;
+    }
+  }
 
   class Player {
     constructor() {
@@ -818,11 +822,8 @@
       this.inv = 0;
 
       this.contactGuard = 0;
-
-      // ✅ FIX: 공격 중 이동 잠금
       this.attackLock = 0;
 
-      // ✅ Heal System
       this.potions = 3;
       this.potionCd = 0;
       this.noHitT = 999;
@@ -915,6 +916,12 @@
       this.animT=0;
       this.dead=false;
       this.dieT=0;
+
+      // ✅ NEW: 점프 쿨다운(근접 떨림 방지)
+      this.jumpCd = 0;
+
+      // ✅ NEW: 세로 안정(바닥 스냅용)
+      this.groundSnap = true;
     }
   }
 
@@ -986,7 +993,7 @@
   function freshState(){
     const p = new Player();
     return {
-      ver: 6,
+      ver: 7,
       game: "보스게이트 (BOSS GATE)",
       createdAt: isoNow(),
       updatedAt: isoNow(),
@@ -1238,305 +1245,28 @@
     }
   }
 
-  // -------------------- FIX: 겹침 안정화(세로 튐 방지) --------------------
-  function stabilizeOverlapNoBounce(p, e){
+  // -------------------- FIX: 겹침 안정화(몬스터 세로 튐 제거) --------------------
+  function stabilizeOverlapNoBounce(state, p, e){
     const dx = (p.x - e.x);
     const overlapX = (p.w/2 + e.w/2) - Math.abs(dx);
     if (overlapX <= 0) return false;
 
-    const dir = dx === 0 ? (p.face || 1) : Math.sign(dx); // p가 e보다 오른쪽이면 +1
+    const dir = dx === 0 ? (p.face || 1) : Math.sign(dx);
     const push = overlapX * CONTACT_SEP_STRENGTH;
 
-    // X축으로만 분리 (Y/속도는 건드리지 않음)
+    // X축으로만 분리
     p.x += dir * (push * 0.35);
     e.x -= dir * (push * 0.65);
 
-    // 서로 겹쳐서 떨리는 느낌 줄이기 (가로 속도만 조금 완화)
-    p.vx *= 0.15;
-    e.vx *= 0.15;
+    // 서로 겹쳐서 떨리는 느낌 줄이기
+    p.vx *= 0.10;
+    e.vx *= 0.10;
+
+    // ✅ 핵심: 몬스터 세로 완전 고정
+    e.vy = 0;
+    if (e.groundSnap) snapToGround(e);
+
     return true;
-  }
-
-  // -------------------- Gameplay Update --------------------
-  function updatePlay(state, dt){
-    const p = state.player;
-    const d = p.derived();
-
-    p.atkCd = Math.max(0, p.atkCd - dt);
-    p.skillCd = Math.max(0, p.skillCd - dt);
-    p.inv = Math.max(0, p.inv - dt);
-    p.contactGuard = Math.max(0, p.contactGuard - dt);
-    p.attackLock = Math.max(0, p.attackLock - dt);
-
-    p.potionCd = Math.max(0, p.potionCd - dt);
-    p.noHitT += dt;
-
-    applyRegen(state, dt);
-
-    const ax = moveAxis();
-
-    // ✅ FIX: 공격/스킬 직후 잠깐은 지상에서 이동 잠금(칼만 움직이게)
-    if (p.attackLock > 0 && p.onGround) {
-      p.vx = 0;
-    } else {
-      p.vx = ax * d.spd * dt;
-    }
-
-    if (ax !== 0) p.face = ax > 0 ? 1 : -1;
-
-    if (pressed.jump && p.onGround) {
-      p.vy = -520;
-      p.onGround = false;
-    }
-    pressed.jump = false;
-
-    if (pressed.potion) {
-      tryUsePotion(state);
-    }
-    pressed.potion = false;
-
-    p.vy += 1200 * dt;
-    collidePlatforms(p, state.platforms);
-
-    if (p.inv > 0) p.anim = "hurt";
-    else if (!p.onGround) p.anim = "jump";
-    else if (Math.abs(ax) > 0.05 && p.attackLock <= 0) p.anim = "run";
-    else p.anim = "idle";
-
-    p.animT += dt;
-    if (p.anim !== state._prevAnimP) { p.animT = 0; state._prevAnimP = p.anim; }
-
-    // 공격(Z)
-    if (pressed.atk && p.atkCd <= 0) {
-      p.atkCd = 0.30;
-      p.anim = "attack"; p.animT = 0;
-
-      // ✅ FIX: 빈틈 제거 + 칼질 중 안정화
-      p.attackLock = Math.max(p.attackLock, ATTACK_LOCK_ATK);
-      p.contactGuard = Math.max(p.contactGuard, CONTACT_GUARD_ATK);
-
-      const hx = p.x + p.face * 46;
-      const hy = p.y - 10;
-      const hw = 72, hh = 52;
-
-      let hit = 0;
-      for (const e of state.enemies) {
-        if (e.dead) continue;
-        if (aabb(hx - hw/2, hy - hh/2, hw, hh, e.x - e.w/2, e.y - e.h/2, e.w, e.h)) {
-          const { dmg, crit } = damageCalc(d.atk, e.def, d.crit, 1.05);
-          e.hp = clamp(e.hp - dmg, 0, e.hpMax);
-          e.hitCd = 0.12;
-          hit++;
-
-          applyLifesteal(state, dmg);
-
-          spawnHitFX(state, e.x, e.y - 14);
-          state.dmgText.push(new DamageText(
-            e.x, e.y - 64, `${crit ? "✦" : ""}${dmg}`,
-            crit ? "rgba(255,235,120,0.95)" : "rgba(235,240,255,0.92)"
-          ));
-
-          if (e.hp <= 0) {
-            e.dead = true; e.dieT = 0;
-            dropRewards(state, e);
-            state.killed++;
-            p.kills++;
-          }
-        }
-      }
-      if (hit === 0) audio.playHit();
-    }
-    pressed.atk = false;
-
-    // 스킬(X)
-    if (pressed.skill && p.skillCd <= 0) {
-      p.skillCd = 2.8;
-      p.atkCd = 0.42;
-      p.anim = "attack"; p.animT = 0;
-
-      // ✅ FIX: 스킬 중 안정화 강화
-      p.attackLock = Math.max(p.attackLock, ATTACK_LOCK_SKL);
-      p.contactGuard = Math.max(p.contactGuard, CONTACT_GUARD_SKL);
-
-      const hx = p.x + p.face * 78;
-      const hy = p.y - 12;
-      const hw = 160, hh = 76;
-
-      for (const e of state.enemies) {
-        if (e.dead) continue;
-        if (aabb(hx - hw/2, hy - hh/2, hw, hh, e.x - e.w/2, e.y - e.h/2, e.w, e.h)) {
-          const { dmg, crit } = damageCalc(d.atk, e.def, d.crit, 1.85);
-          e.hp = clamp(e.hp - dmg, 0, e.hpMax);
-          e.hitCd = 0.16;
-
-          applyLifesteal(state, dmg);
-
-          spawnHitFX(state, e.x, e.y - 14);
-          state.dmgText.push(new DamageText(
-            e.x, e.y - 64, `${crit ? "✦" : ""}${dmg}`,
-            "rgba(255,207,91,0.95)"
-          ));
-
-          if (e.hp <= 0) {
-            e.dead = true; e.dieT = 0;
-            dropRewards(state, e);
-            state.killed++;
-            p.kills++;
-          }
-        }
-      }
-    }
-    pressed.skill = false;
-
-    // 적 AI + 접촉 처리
-    for (const e of state.enemies) {
-      if (e.dead) { e.dieT += dt; continue; }
-      e.hitCd = Math.max(0, e.hitCd - dt);
-      e.aiT += dt;
-
-      const dx = p.x - e.x;
-      const ad = Math.abs(dx);
-      const chase = ad < 360 || (e.tier==="boss" && ad < 520);
-      const dir = dx > 0 ? 1 : -1;
-      e.face = dir;
-
-      e.vx = chase ? (dir * e.spd * dt * 0.75) : (Math.sin(e.aiT*1.2) * e.spd * dt * 0.28);
-      if (e.onGround && chase && Math.random() < 0.008) e.vy = -420;
-
-      e.vy += 1100 * dt;
-      collidePlatforms(e, state.platforms);
-
-      const overlapped = aabb(
-        p.x - p.w/2, p.y - p.h/2, p.w, p.h,
-        e.x - e.w/2, e.y - e.h/2, e.w, e.h
-      );
-
-      // ✅ FIX: 공격/스킬 중엔 "데미지 없이 X축 분리"만 수행 → 세로 튐 0
-      if (overlapped && (p.attackLock > 0 || p.contactGuard > 0)) {
-        stabilizeOverlapNoBounce(p, e);
-      }
-
-      // 접촉 피격(데미지) - Y넉백 제거
-      if (overlapped && p.inv <= 0 && p.attackLock <= 0 && p.contactGuard <= 0) {
-        const { dmg } = damageCalc(e.atk, d.def, 0, 1);
-        p.hp = clamp(p.hp - dmg, 0, d.hpMax);
-        p.inv = 0.55;
-
-        // 피격 처리: 자동회복 지연
-        p.noHitT = 0;
-
-        audio.playHit();
-        state.dmgText.push(new DamageText(p.x, p.y - 64, `-${dmg}`, "rgba(255,91,110,0.95)"));
-
-        // ✅ FIX: 세로 튐 제거 (vy 건드리지 않음)
-        // 대신 X축으로만 살짝 밀림
-        p.x += -e.face * 22;
-
-        if (p.hp <= 0) {
-          const lost = Math.round(p.gold * 0.08);
-          p.gold = Math.max(0, p.gold - lost);
-          p.hp = d.hpMax;
-          p.noHitT = 999;
-          state.gs = "MENU";
-          state.msg = `보스게이트에서 쓰러졌다… ${lost}G 잃음.`;
-          state.msgT = 2.0;
-          save(state);
-          return;
-        }
-      }
-
-      if (e.dead) e.anim = "die";
-      else if (e.hitCd > 0) e.anim = "hurt";
-      else if (!e.onGround) e.anim = "run";
-      else if (chase) e.anim = "run";
-      else e.anim = "idle";
-
-      e.animT += dt;
-      if (e.anim !== e._prevAnim) { e.animT = 0; e._prevAnim = e.anim; }
-    }
-
-    if (state.killed >= state.goalKills) ensureDoor(state);
-
-    // 코인 줍기
-    for (let i=state.coins.length-1;i>=0;i--){
-      const c = state.coins[i];
-      c.t += dt;
-      c.vy += 1100*dt;
-      c.x += c.vx*dt;
-      c.y += c.vy*dt;
-      if (c.y > GROUND_Y - 12) {
-        c.y = GROUND_Y - 12;
-        c.vy *= -0.22;
-        c.vx *= 0.55;
-      }
-      if (dist(c.x,c.y, p.x, p.y-20) < 38) {
-        p.gold += c.amount;
-        state.coins.splice(i,1);
-        audio.playCoin();
-      }
-    }
-
-    // 아이템 줍기
-    for (let i=state.loots.length-1;i>=0;i--){
-      const l = state.loots[i];
-      l.t += dt;
-      l.vy += 1100*dt;
-      l.x += l.vx*dt;
-      l.y += l.vy*dt;
-      if (l.y > GROUND_Y - 16) {
-        l.y = GROUND_Y - 16;
-        l.vy *= -0.18;
-        l.vx *= 0.45;
-      }
-      if (dist(l.x,l.y, p.x, p.y-20) < 38) {
-        p.invItems.push(l.item);
-        state.loots.splice(i,1);
-        state.msg = `획득: [${l.item.rar}] ${l.item.name}${l.item.identified?"":"(미감정)"}`;
-        state.msgT = 1.5;
-      }
-    }
-
-    // 문 진입 → 다음 스테이지
-    if (state.door) {
-      const d0 = state.door;
-      if (aabb(p.x - p.w/2, p.y - p.h/2, p.w, p.h, d0.x, d0.y, d0.w, d0.h)) {
-        stageClearReward(state);
-        state.stageIndex += 1;
-        state.player.stage = state.stageIndex;
-        rebuildStage(state);
-        save(state);
-      }
-    }
-
-    // FX update
-    for (const f of state.fx) f.update(dt);
-    state.fx = state.fx.filter(x => !x.dead());
-    for (const t of state.dmgText) t.update(dt);
-    state.dmgText = state.dmgText.filter(x => !x.dead());
-    for (const pa of state.parts) pa.update(dt);
-    state.parts = state.parts.filter(x => !x.dead());
-
-    if (state.msgT > 0) state.msgT -= dt;
-
-    // 카메라: 세로 고정
-    cam.y = CAM_Y;
-
-    // 카메라: 가로 부드럽게
-    const targetX = clamp(p.x - VIEW_W*0.45, 0, WORLD.w - VIEW_W);
-    state.camX = lerp(state.camX, targetX, smoothFactor(dt, 18));
-    cam.x = state.camX;
-
-    // HUD 버튼 클릭
-    const hotGear = (pointer.x>=HUD_MENU_BTN.x && pointer.x<=HUD_MENU_BTN.x+HUD_MENU_BTN.w &&
-                     pointer.y>=HUD_MENU_BTN.y && pointer.y<=HUD_MENU_BTN.y+HUD_MENU_BTN.h);
-    if (pointer.clicked && hotGear) { state.gs = "PAUSE"; save(state); }
-
-    const hotPotionHud = (pointer.x>=HUD_POTION_BTN.x && pointer.x<=HUD_POTION_BTN.x+HUD_POTION_BTN.w &&
-                          pointer.y>=HUD_POTION_BTN.y && pointer.y<=HUD_POTION_BTN.y+HUD_POTION_BTN.h);
-    if (pointer.clicked && hotPotionHud) { tryUsePotion(state); }
-
-    if (pressed.menu) { pressed.menu = false; state.gs = "PAUSE"; save(state); return; }
-    if (pressed.inv)  { pressed.inv  = false; state.gs = "INVENTORY"; save(state); return; }
   }
 
   // -------------------- Draw helpers --------------------
@@ -1550,7 +1280,6 @@
       ctx.fillRect(x, y, p.w, 3);
     }
   }
-
   function drawDoor(door){
     const x = door.x - cam.x;
     const y = door.y - cam.y;
@@ -1564,7 +1293,6 @@
     ctx.fillText(door.kind==="next" ? "BOSS GATE" : "EXIT GATE", x+10, y+20);
     ctx.lineWidth = 1;
   }
-
   function drawCoins(coins){
     for (const c of coins) {
       const x = c.x - cam.x, y = c.y - cam.y;
@@ -1574,7 +1302,6 @@
       ctx.fillRect(x-2,y-5,3,3);
     }
   }
-
   function drawLoot(loots){
     for (const l of loots) {
       const x = l.x - cam.x, y = l.y - cam.y;
@@ -1585,6 +1312,7 @@
     }
   }
 
+  // -------------------- UI: HUD --------------------
   function drawHud(state){
     const p = state.player;
     const d = p.derived();
@@ -1687,6 +1415,7 @@
     ctx.restore();
   }
 
+  // -------------------- Draw: Menu/Options --------------------
   function drawMenu(state){
     drawBackground();
     const px = VIEW_W*0.5-260, py = VIEW_H*0.5-190;
@@ -1753,6 +1482,7 @@
     ctx.fillText("오디오가 안 나면 화면을 한 번 탭/클릭해서 언락해줘.", VIEW_W*0.5-200, VIEW_H*0.5+70);
   }
 
+  // -------------------- Scene draw --------------------
   function drawScene(state, dim=false){
     drawBackground();
     drawPlatforms(state.platforms);
@@ -1799,7 +1529,7 @@
     try { location.replace("about:blank"); } catch { location.href = "about:blank"; }
   }
 
-  // ✅ FIX: PAUSE 메뉴 버튼이 항상 화면 안에 들어오도록 재배치
+  // -------------------- Pause/Shop/Inventory --------------------
   function drawPause(state){
     drawScene(state, true);
 
@@ -1892,9 +1622,6 @@
   }
 
   function drawInventory(state){
-    // 인벤/감정/뽑기는 이전 버전과 동일하게 유지(요청사항 변경 없음)
-    // → 길어서 여기서 생략하지 않고, 아래 revive 포함해서 정상 동작
-    // (인벤 UI는 drawScene에 오버레이로 표시)
     drawScene(state, true);
     panel(VIEW_W*0.5-370, VIEW_H*0.5-230, 740, 460, "인벤토리 / 장비(감정)");
 
@@ -2007,6 +1734,298 @@
     ctx.fillStyle = "rgba(235,240,255,0.70)";
     ctx.fillText("브라우저가 탭 닫기를 막으면 빈 화면으로 이동합니다.", VIEW_W/2, VIEW_H/2 + 24);
     ctx.textAlign = "left";
+  }
+
+  // -------------------- Gameplay Update --------------------
+  function updatePlay(state, dt){
+    const p = state.player;
+    const d = p.derived();
+
+    p.atkCd = Math.max(0, p.atkCd - dt);
+    p.skillCd = Math.max(0, p.skillCd - dt);
+    p.inv = Math.max(0, p.inv - dt);
+    p.contactGuard = Math.max(0, p.contactGuard - dt);
+    p.attackLock = Math.max(0, p.attackLock - dt);
+
+    p.potionCd = Math.max(0, p.potionCd - dt);
+    p.noHitT += dt;
+
+    applyRegen(state, dt);
+
+    const ax = moveAxis();
+
+    if (p.attackLock > 0 && p.onGround) {
+      p.vx = 0;
+    } else {
+      p.vx = ax * d.spd * dt;
+    }
+
+    if (ax !== 0) p.face = ax > 0 ? 1 : -1;
+
+    if (pressed.jump && p.onGround) {
+      p.vy = -520;
+      p.onGround = false;
+    }
+    pressed.jump = false;
+
+    if (pressed.potion) {
+      tryUsePotion(state);
+    }
+    pressed.potion = false;
+
+    p.vy += 1200 * dt;
+    collidePlatforms(p, state.platforms);
+
+    if (p.inv > 0) p.anim = "hurt";
+    else if (!p.onGround) p.anim = "jump";
+    else if (Math.abs(ax) > 0.05 && p.attackLock <= 0) p.anim = "run";
+    else p.anim = "idle";
+
+    p.animT += dt;
+    if (p.anim !== state._prevAnimP) { p.animT = 0; state._prevAnimP = p.anim; }
+
+    // Z 공격
+    if (pressed.atk && p.atkCd <= 0) {
+      p.atkCd = 0.30;
+      p.anim = "attack"; p.animT = 0;
+      p.attackLock = Math.max(p.attackLock, ATTACK_LOCK_ATK);
+      p.contactGuard = Math.max(p.contactGuard, CONTACT_GUARD_ATK);
+
+      const hx = p.x + p.face * 46;
+      const hy = p.y - 10;
+      const hw = 72, hh = 52;
+
+      let hit = 0;
+      for (const e of state.enemies) {
+        if (e.dead) continue;
+        if (aabb(hx - hw/2, hy - hh/2, hw, hh, e.x - e.w/2, e.y - e.h/2, e.w, e.h)) {
+          const { dmg, crit } = damageCalc(d.atk, e.def, d.crit, 1.05);
+          e.hp = clamp(e.hp - dmg, 0, e.hpMax);
+          e.hitCd = 0.12;
+
+          // ✅ 핵심: 맞는 순간 몬스터 세로속도 즉시 0 + 바닥 스냅
+          e.vy = 0;
+          snapToGround(e);
+
+          hit++;
+          applyLifesteal(state, dmg);
+
+          spawnHitFX(state, e.x, e.y - 14);
+          state.dmgText.push(new DamageText(
+            e.x, e.y - 64, `${crit ? "✦" : ""}${dmg}`,
+            crit ? "rgba(255,235,120,0.95)" : "rgba(235,240,255,0.92)"
+          ));
+
+          if (e.hp <= 0) {
+            e.dead = true; e.dieT = 0;
+            dropRewards(state, e);
+            state.killed++;
+            p.kills++;
+          }
+        }
+      }
+      if (hit === 0) audio.playHit();
+    }
+    pressed.atk = false;
+
+    // X 스킬
+    if (pressed.skill && p.skillCd <= 0) {
+      p.skillCd = 2.8;
+      p.atkCd = 0.42;
+      p.anim = "attack"; p.animT = 0;
+      p.attackLock = Math.max(p.attackLock, ATTACK_LOCK_SKL);
+      p.contactGuard = Math.max(p.contactGuard, CONTACT_GUARD_SKL);
+
+      const hx = p.x + p.face * 78;
+      const hy = p.y - 12;
+      const hw = 160, hh = 76;
+
+      for (const e of state.enemies) {
+        if (e.dead) continue;
+        if (aabb(hx - hw/2, hy - hh/2, hw, hh, e.x - e.w/2, e.y - e.h/2, e.w, e.h)) {
+          const { dmg, crit } = damageCalc(d.atk, e.def, d.crit, 1.85);
+          e.hp = clamp(e.hp - dmg, 0, e.hpMax);
+          e.hitCd = 0.16;
+
+          // ✅ 핵심
+          e.vy = 0;
+          snapToGround(e);
+
+          applyLifesteal(state, dmg);
+
+          spawnHitFX(state, e.x, e.y - 14);
+          state.dmgText.push(new DamageText(
+            e.x, e.y - 64, `${crit ? "✦" : ""}${dmg}`,
+            "rgba(255,207,91,0.95)"
+          ));
+
+          if (e.hp <= 0) {
+            e.dead = true; e.dieT = 0;
+            dropRewards(state, e);
+            state.killed++;
+            p.kills++;
+          }
+        }
+      }
+    }
+    pressed.skill = false;
+
+    // 적 AI + 접촉 처리
+    for (const e of state.enemies) {
+      if (e.dead) { e.dieT += dt; continue; }
+      e.hitCd = Math.max(0, e.hitCd - dt);
+      e.aiT += dt;
+      e.jumpCd = Math.max(0, e.jumpCd - dt);
+
+      const dx = p.x - e.x;
+      const ad = Math.abs(dx);
+      const chase = ad < 360 || (e.tier==="boss" && ad < 520);
+      const dir = dx > 0 ? 1 : -1;
+      e.face = dir;
+
+      // ✅ 근접 떨림 방지: 몬스터 점프는 "거리 있을 때만" + 쿨다운
+      if (e.onGround && chase && e.jumpCd <= 0 && ad > 140 && Math.random() < 0.002) {
+        e.vy = -420;
+        e.jumpCd = 1.25;
+      }
+
+      e.vx = chase ? (dir * e.spd * dt * 0.75) : (Math.sin(e.aiT*1.2) * e.spd * dt * 0.28);
+
+      e.vy += 1100 * dt;
+
+      collidePlatforms(e, state.platforms);
+
+      // ✅ NEW: 매 프레임 바닥 스냅 (몬스터만)
+      snapToGround(e);
+
+      const overlapped = aabb(
+        p.x - p.w/2, p.y - p.h/2, p.w, p.h,
+        e.x - e.w/2, e.y - e.h/2, e.w, e.h
+      );
+
+      // ✅ 공격/스킬 중엔 "데미지 없이 X분리 + 몬스터 vy=0 고정 + 바닥 스냅"
+      if (overlapped && (p.attackLock > 0 || p.contactGuard > 0)) {
+        stabilizeOverlapNoBounce(state, p, e);
+      }
+
+      // 접촉 피격(데미지)
+      if (overlapped && p.inv <= 0 && p.attackLock <= 0 && p.contactGuard <= 0) {
+        const { dmg } = damageCalc(e.atk, d.def, 0, 1);
+        p.hp = clamp(p.hp - dmg, 0, d.hpMax);
+        p.inv = 0.55;
+        p.noHitT = 0;
+
+        audio.playHit();
+        state.dmgText.push(new DamageText(p.x, p.y - 64, `-${dmg}`, "rgba(255,91,110,0.95)"));
+
+        // y 튐 제거: x만 살짝 밀림
+        p.x += -e.face * 22;
+
+        if (p.hp <= 0) {
+          const lost = Math.round(p.gold * 0.08);
+          p.gold = Math.max(0, p.gold - lost);
+          p.hp = d.hpMax;
+          p.noHitT = 999;
+          state.gs = "MENU";
+          state.msg = `보스게이트에서 쓰러졌다… ${lost}G 잃음.`;
+          state.msgT = 2.0;
+          save(state);
+          return;
+        }
+      }
+
+      if (e.dead) e.anim = "die";
+      else if (e.hitCd > 0) e.anim = "hurt";
+      else if (!e.onGround) e.anim = "run";
+      else if (chase) e.anim = "run";
+      else e.anim = "idle";
+
+      e.animT += dt;
+      if (e.anim !== e._prevAnim) { e.animT = 0; e._prevAnim = e.anim; }
+    }
+
+    if (state.killed >= state.goalKills) ensureDoor(state);
+
+    // 코인 줍기
+    for (let i=state.coins.length-1;i>=0;i--){
+      const c = state.coins[i];
+      c.t += dt;
+      c.vy += 1100*dt;
+      c.x += c.vx*dt;
+      c.y += c.vy*dt;
+      if (c.y > GROUND_Y - 12) {
+        c.y = GROUND_Y - 12;
+        c.vy *= -0.22;
+        c.vx *= 0.55;
+      }
+      if (dist(c.x,c.y, p.x, p.y-20) < 38) {
+        p.gold += c.amount;
+        state.coins.splice(i,1);
+        audio.playCoin();
+      }
+    }
+
+    // 아이템 줍기
+    for (let i=state.loots.length-1;i>=0;i--){
+      const l = state.loots[i];
+      l.t += dt;
+      l.vy += 1100*dt;
+      l.x += l.vx*dt;
+      l.y += l.vy*dt;
+      if (l.y > GROUND_Y - 16) {
+        l.y = GROUND_Y - 16;
+        l.vy *= -0.18;
+        l.vx *= 0.45;
+      }
+      if (dist(l.x,l.y, p.x, p.y-20) < 38) {
+        p.invItems.push(l.item);
+        state.loots.splice(i,1);
+        state.msg = `획득: [${l.item.rar}] ${l.item.name}${l.item.identified?"":"(미감정)"}`;
+        state.msgT = 1.5;
+      }
+    }
+
+    // 문 진입 → 다음 스테이지
+    if (state.door) {
+      const d0 = state.door;
+      if (aabb(p.x - p.w/2, p.y - p.h/2, p.w, p.h, d0.x, d0.y, d0.w, d0.h)) {
+        stageClearReward(state);
+        state.stageIndex += 1;
+        state.player.stage = state.stageIndex;
+        rebuildStage(state);
+        save(state);
+      }
+    }
+
+    // FX update
+    for (const f of state.fx) f.update(dt);
+    state.fx = state.fx.filter(x => !x.dead());
+    for (const t of state.dmgText) t.update(dt);
+    state.dmgText = state.dmgText.filter(x => !x.dead());
+    for (const pa of state.parts) pa.update(dt);
+    state.parts = state.parts.filter(x => !x.dead());
+
+    if (state.msgT > 0) state.msgT -= dt;
+
+    // 카메라: 세로 고정
+    cam.y = CAM_Y;
+
+    // 카메라: 가로 부드럽게
+    const targetX = clamp(p.x - VIEW_W*0.45, 0, WORLD.w - VIEW_W);
+    state.camX = lerp(state.camX, targetX, smoothFactor(dt, 18));
+    cam.x = state.camX;
+
+    // HUD 버튼
+    const hotGear = (pointer.x>=HUD_MENU_BTN.x && pointer.x<=HUD_MENU_BTN.x+HUD_MENU_BTN.w &&
+                     pointer.y>=HUD_MENU_BTN.y && pointer.y<=HUD_MENU_BTN.y+HUD_MENU_BTN.h);
+    if (pointer.clicked && hotGear) { state.gs = "PAUSE"; save(state); }
+
+    const hotPotionHud = (pointer.x>=HUD_POTION_BTN.x && pointer.x<=HUD_POTION_BTN.x+HUD_POTION_BTN.w &&
+                          pointer.y>=HUD_POTION_BTN.y && pointer.y<=HUD_POTION_BTN.y+HUD_POTION_BTN.h);
+    if (pointer.clicked && hotPotionHud) { tryUsePotion(state); }
+
+    if (pressed.menu) { pressed.menu = false; state.gs = "PAUSE"; save(state); return; }
+    if (pressed.inv)  { pressed.inv  = false; state.gs = "INVENTORY"; save(state); return; }
   }
 
   // -------------------- Revive --------------------
