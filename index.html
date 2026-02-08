@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
-  <title>보스게이트 - 초안정 v4 (블랙스크린/먹통 방지)</title>
+  <title>보스게이트 - 초안정 v4.1 (저장/삭제 메뉴 추가)</title>
   <style>
     :root{
       --bg:#070a12;
@@ -87,6 +87,7 @@
       font-size:12px;
       color: var(--muted);
       letter-spacing:-0.2px;
+      align-items:center;
     }
 
     .btnRow{
@@ -126,8 +127,24 @@
     .btn.ghost{ background: rgba(255,255,255,0.06); box-shadow:none; }
     .btn.bad{ background: linear-gradient(180deg, rgba(255,106,106,0.25), rgba(255,106,106,0.16)); border-color: rgba(255,106,106,0.28); }
     .btn.good{ background: linear-gradient(180deg, rgba(106,227,123,0.22), rgba(106,227,123,0.14)); border-color: rgba(106,227,123,0.28); }
+    .btn.warn{ background: linear-gradient(180deg, rgba(255,211,106,0.22), rgba(255,211,106,0.12)); border-color: rgba(255,211,106,0.28); }
     .btn.on{ outline:2px solid rgba(106,167,255,0.55); border-color: rgba(106,167,255,0.55); }
     .btn:active{ transform: translateY(1px); }
+
+    .chip{
+      font-size:12px;
+      padding:6px 10px;
+      border-radius:999px;
+      border: 1px solid rgba(255,255,255,0.12);
+      background: rgba(255,255,255,0.06);
+      color: var(--muted);
+      display:inline-flex;
+      gap:6px;
+      align-items:center;
+    }
+    .chip.good{ color: rgba(106,227,123,0.95); border-color: rgba(106,227,123,0.28); }
+    .chip.warn{ color: rgba(255,211,106,0.95); border-color: rgba(255,211,106,0.30); }
+    .chip.bad{  color: rgba(255,106,106,0.95); border-color: rgba(255,106,106,0.30); }
 
     .bottombar{
       position:absolute;
@@ -145,7 +162,7 @@
       border: 1px solid rgba(255,255,255,0.16);
       background: radial-gradient(circle at 30% 30%, rgba(255,255,255,0.08), rgba(255,255,255,0.03));
       position:relative;
-      touch-action:none; /* 조이스틱만 드래그 */
+      touch-action:none;
       display:flex;
       align-items:center;
       justify-content:center;
@@ -217,8 +234,8 @@
     }
     .modal.show{ display:flex; }
     .modalCard{
-      width:min(820px, 100%);
-      max-height:min(80vh, 900px);
+      width:min(920px, 100%);
+      max-height:min(82vh, 920px);
       overflow:auto;
       border-radius:18px;
       border:1px solid rgba(255,255,255,0.16);
@@ -240,6 +257,11 @@
     .grid2{
       display:grid;
       grid-template-columns: 1.1fr 0.9fr;
+      gap:12px;
+    }
+    .grid3{
+      display:grid;
+      grid-template-columns: 1fr 1fr 1fr;
       gap:12px;
     }
     .box{
@@ -283,7 +305,7 @@
       color: var(--muted);
     }
 
-    /* 실행/에러/로그 패널: “검은 화면”이라도 무조건 보이게 */
+    /* 디버그 */
     #debug{
       position:absolute;
       left:12px; bottom:12px;
@@ -331,6 +353,7 @@
 
     @media (max-width: 520px){
       .grid2{ grid-template-columns: 1fr; }
+      .grid3{ grid-template-columns: 1fr; }
       .joystick{ width:128px; height:128px; }
       #debug{ transform: translateY(-176px); }
     }
@@ -344,7 +367,7 @@
   <div id="hud">
     <div class="topbar">
       <div class="panel status">
-        <div class="title">보스게이트 (초안정 v4)</div>
+        <div class="title">보스게이트 (초안정 v4.1)</div>
         <div class="meta">
           <span id="sceneTxt">장면: 메뉴</span>
           <span id="stageTxt">스테이지: -</span>
@@ -352,8 +375,9 @@
           <span id="fpsTxt">FPS: -</span>
         </div>
         <div class="meta">
-          <span id="devTxt">기기: -</span>
-          <span id="ctxTxt">CTX: -</span>
+          <span class="chip" id="devTxt">기기: -</span>
+          <span class="chip" id="ctxTxt">CTX: -</span>
+          <span class="chip warn" id="saveChip">저장: 없음</span>
           <button class="btn small ghost" id="btnDebug">디버그</button>
         </div>
       </div>
@@ -381,7 +405,8 @@
         <div class="panel col">
           <button class="btn small" id="btnToggleTarget">오토 타겟</button>
           <button class="btn small" id="btnToggleAtk">오토 공격</button>
-          <button class="btn small" id="btnReset">리셋</button>
+          <button class="btn small warn" id="btnQuickSave">퀵저장</button>
+          <button class="btn small bad" id="btnReset">리셋</button>
         </div>
       </div>
     </div>
@@ -394,7 +419,8 @@
         <h2>메뉴</h2>
         <button class="btn small ghost" id="btnCloseMenu">닫기</button>
       </div>
-      <div class="grid2">
+
+      <div class="grid3">
         <div class="box">
           <h3>진행</h3>
           <div style="display:flex; gap:10px; flex-wrap:wrap;">
@@ -402,13 +428,44 @@
             <button class="btn bad" id="btnStartBoss">보스 시작</button>
             <button class="btn ghost" id="btnEndRun">스테이지 종료</button>
           </div>
+          <div style="margin-top:10px; font-size:12px; color:rgba(255,255,255,0.65); line-height:1.55;">
+            ※ 안정판이라 연출은 단순하지만<br>
+            저장/불러오기/삭제는 정상 동작.
+          </div>
         </div>
+
         <div class="box">
-          <h3>안내</h3>
-          <div style="font-size:12px; color:rgba(255,255,255,0.65); line-height:1.55;">
-            이 버전은 “검은 화면/먹통”을 막기 위해<br/>
-            캔버스 스케일/클립/복잡한 초기화 없이<br/>
-            무조건 플레이어(흰 원)가 보이게 만든 안정판입니다.
+          <h3>저장/삭제</h3>
+          <div class="itemRow" style="margin-bottom:10px;">
+            <div class="name">
+              <b>저장 슬롯</b>
+              <span id="saveInfo">저장 없음</span>
+            </div>
+            <span class="chip" id="saveBadge">EMPTY</span>
+          </div>
+
+          <div style="display:flex; gap:10px; flex-wrap:wrap;">
+            <button class="btn good" id="btnSave">저장</button>
+            <button class="btn" id="btnLoad">불러오기</button>
+            <button class="btn bad" id="btnDeleteSave">저장삭제</button>
+          </div>
+
+          <div style="margin-top:10px; font-size:12px; color:rgba(255,255,255,0.65); line-height:1.55;">
+            저장은 브라우저(localStorage)에 저장돼.<br>
+            “저장삭제”는 저장 데이터 전체 삭제.
+          </div>
+        </div>
+
+        <div class="box">
+          <h3>옵션</h3>
+          <div style="display:flex; gap:10px; flex-wrap:wrap;">
+            <button class="btn small" id="btnToggleTarget2">오토 타겟 토글</button>
+            <button class="btn small" id="btnToggleAtk2">오토 공격 토글</button>
+            <button class="btn small ghost" id="btnHardRefreshHint">새로고침 팁</button>
+          </div>
+          <div style="margin-top:10px; font-size:12px; color:rgba(255,255,255,0.65); line-height:1.55;">
+            캐시가 꼬이면 모바일은 새로고침 길게 →<br>
+            “캐시 비우고 강력 새로고침”이 효과적.
           </div>
         </div>
       </div>
@@ -450,7 +507,7 @@
 (() => {
   "use strict";
 
-  // ---------- DOM ----------
+  // ----------------- DOM -----------------
   const cv = document.getElementById("cv");
   const sceneTxt = document.getElementById("sceneTxt");
   const stageTxt = document.getElementById("stageTxt");
@@ -458,6 +515,7 @@
   const fpsTxt   = document.getElementById("fpsTxt");
   const devTxt   = document.getElementById("devTxt");
   const ctxTxt   = document.getElementById("ctxTxt");
+  const saveChip = document.getElementById("saveChip");
 
   const toastWrap = document.getElementById("toastWrap");
 
@@ -471,6 +529,7 @@
 
   const btnToggleTarget = document.getElementById("btnToggleTarget");
   const btnToggleAtk    = document.getElementById("btnToggleAtk");
+  const btnQuickSave    = document.getElementById("btnQuickSave");
   const btnReset        = document.getElementById("btnReset");
 
   const menuModal = document.getElementById("menuModal");
@@ -481,6 +540,16 @@
   const btnStartStage = document.getElementById("btnStartStage");
   const btnStartBoss  = document.getElementById("btnStartBoss");
   const btnEndRun     = document.getElementById("btnEndRun");
+
+  const btnSave       = document.getElementById("btnSave");
+  const btnLoad       = document.getElementById("btnLoad");
+  const btnDeleteSave = document.getElementById("btnDeleteSave");
+  const saveInfo      = document.getElementById("saveInfo");
+  const saveBadge     = document.getElementById("saveBadge");
+
+  const btnToggleTarget2 = document.getElementById("btnToggleTarget2");
+  const btnToggleAtk2    = document.getElementById("btnToggleAtk2");
+  const btnHardRefreshHint = document.getElementById("btnHardRefreshHint");
 
   const joy = document.getElementById("joy");
   const stick = document.getElementById("stick");
@@ -496,7 +565,7 @@
   const btnHideFatal = document.getElementById("btnHideFatal");
   const btnReload = document.getElementById("btnReload");
 
-  // ---------- 안전 로그 ----------
+  // ----------------- 안전 로그 -----------------
   const logs = [];
   function log(s){
     const t = new Date().toISOString().slice(11,19);
@@ -529,7 +598,7 @@ ${e.error && e.error.stack ? ("\n" + e.error.stack) : ""}`;
   btnHideFatal.addEventListener("click", ()=> fatal.style.display="none");
   btnReload.addEventListener("click", ()=> location.reload());
 
-  // ---------- 유틸 ----------
+  // ----------------- 유틸 -----------------
   const clamp = (v,a,b)=> Math.max(a, Math.min(b,v));
   const now = ()=> performance.now();
 
@@ -538,7 +607,7 @@ ${e.error && e.error.stack ? ("\n" + e.error.stack) : ""}`;
   }
   devTxt.textContent = `기기: ${isMobileLike() ? "스마트폰/태블릿" : "PC"}`;
 
-  // ---------- 토스트 ----------
+  // ----------------- 토스트 -----------------
   const toasts = [];
   function toast(html, life=1200){
     const el = document.createElement("div");
@@ -561,7 +630,7 @@ ${e.error && e.error.stack ? ("\n" + e.error.stack) : ""}`;
     }
   }
 
-  // ---------- 클릭/터치 안정 바인딩 ----------
+  // ----------------- 클릭/터치 안정 바인딩 -----------------
   function bind(btn, name, fn){
     const run = (e)=>{
       try{
@@ -572,13 +641,12 @@ ${e.error && e.error.stack ? ("\n" + e.error.stack) : ""}`;
         showFatal(`[bind:${name}]\n${err && err.stack ? err.stack : String(err)}`);
       }
     };
-    // 모바일/PC 둘 다 확실히
     btn.addEventListener("click", run, { passive:false });
     btn.addEventListener("touchstart", run, { passive:false });
     btn.addEventListener("pointerdown", run, { passive:false });
   }
 
-  // ---------- 캔버스 ----------
+  // ----------------- 캔버스 -----------------
   const ctx = (() => {
     try{
       const c = cv.getContext("2d", { alpha:false });
@@ -601,13 +669,13 @@ ${e.error && e.error.stack ? ("\n" + e.error.stack) : ""}`;
     const h = Math.max(1, window.innerHeight);
     cv.width  = Math.floor(w * dpr);
     cv.height = Math.floor(h * dpr);
-    ctx.setTransform(dpr,0,0,dpr,0,0); // 이제 모든 draw는 CSS 픽셀 기준
+    ctx.setTransform(dpr,0,0,dpr,0,0);
     log(`resize: ${w}x${h} dpr=${dpr}`);
   }
   window.addEventListener("resize", resize, { passive:true });
   resize();
 
-  // ---------- 게임 상태(초단순) ----------
+  // ----------------- 게임 상태(초단순) -----------------
   const Game = {
     scene: "menu",     // menu / stage / boss
     stageId: null,
@@ -618,7 +686,7 @@ ${e.error && e.error.stack ? ("\n" + e.error.stack) : ""}`;
   };
 
   const Player = {
-    x: 0, y: 0,         // 화면 중심을 0,0으로 두는 “로컬 좌표”
+    x: 0, y: 0,
     r: 14,
     spd: 220,
     atk: 14,
@@ -628,6 +696,12 @@ ${e.error && e.error.stack ? ("\n" + e.error.stack) : ""}`;
 
   const Mobs = []; // {kind,x,y,r,hp,hpMax,phase}
 
+  // 인벤(표시만)
+  const Inv = [
+    { name:"미감정 장비", desc:"기본공격 +3 (잠재: 미공개)" },
+    { name:"미감정 장비", desc:"기본공격 +2 (잠재: 미공개)" },
+  ];
+
   function setScene(scene, stageId=null, limit=0){
     Game.scene = scene;
     Game.stageId = stageId;
@@ -636,11 +710,19 @@ ${e.error && e.error.stack ? ("\n" + e.error.stack) : ""}`;
     Mobs.length = 0;
     Player.x = 0; Player.y = 0;
     Player.dashTime = 0; Player.dashCd = 0;
+
     if (scene === "stage"){
       for (let i=0;i<6;i++){
         const elite = Math.random()<0.2;
-        Mobs.push({ kind: elite?"elite":"slime", x:(Math.random()*2-1)*220, y:(Math.random()*2-1)*140,
-          r: elite?18:14, hp: elite?90:45, hpMax: elite?90:45, phase: Math.random()*Math.PI*2 });
+        Mobs.push({
+          kind: elite?"elite":"slime",
+          x:(Math.random()*2-1)*220,
+          y:(Math.random()*2-1)*140,
+          r: elite?18:14,
+          hp: elite?90:45,
+          hpMax: elite?90:45,
+          phase: Math.random()*Math.PI*2
+        });
       }
     } else if (scene === "boss"){
       Mobs.push({ kind:"boss", x: 220, y: 0, r: 34, hp:260, hpMax:260, phase: Math.random()*Math.PI*2 });
@@ -653,31 +735,173 @@ ${e.error && e.error.stack ? ("\n" + e.error.stack) : ""}`;
     stageTxt.textContent = `스테이지: ${Game.stageId ?? "-"}`;
   }
 
-  // ---------- 인벤(표시만) ----------
-  const Inv = [
-    { name:"미감정 장비", desc:"기본공격 +3 (잠재: 미공개)" },
-    { name:"미감정 장비", desc:"기본공격 +2 (잠재: 미공개)" },
-  ];
+  // ----------------- 인벤 UI -----------------
   function openInv(){
     invList.innerHTML = "";
     for (const it of Inv){
       const row = document.createElement("div");
       row.className = "itemRow";
-      row.innerHTML = `<div class="name"><b>${it.name}</b><span>${it.desc}</span></div><span class="btn small ghost">보기</span>`;
+      row.innerHTML = `
+        <div class="name">
+          <b>${it.name}</b>
+          <span>${it.desc}</span>
+        </div>
+        <span class="chip">보유</span>
+      `;
       invList.appendChild(row);
     }
     invModal.classList.add("show");
   }
 
-  // ---------- 모달 ----------
+  // ----------------- 모달 -----------------
   function closeAll(){
     menuModal.classList.remove("show");
     invModal.classList.remove("show");
   }
 
-  // ---------- 버튼 동작 ----------
-  bind(btnMenu, "메뉴", ()=>{ menuModal.classList.toggle("show"); invModal.classList.remove("show"); toast("<b>메뉴</b> 열림", 900); });
+  // ----------------- 저장 시스템(localStorage) -----------------
+  const SAVE_KEY = "bossgate_save_v4_1";
+
+  function safeJSONParse(s){
+    try{ return JSON.parse(s); }catch(_){ return null; }
+  }
+
+  function snapshot(){
+    // 깊은 복사(간단)
+    return {
+      v: "4.1",
+      savedAt: Date.now(),
+      game: { ...Game },
+      player: { ...Player },
+      mobs: Mobs.map(m => ({...m})),
+      inv: Inv.map(i => ({...i}))
+    };
+  }
+
+  function applySnapshot(data){
+    if (!data || !data.game || !data.player) throw new Error("저장 데이터 형식이 올바르지 않음");
+
+    Game.scene = data.game.scene ?? "menu";
+    Game.stageId = data.game.stageId ?? null;
+    Game.stageTime = Number(data.game.stageTime ?? 0) || 0;
+    Game.timeLimit = Number(data.game.timeLimit ?? 0) || 0;
+    Game.autoTarget = !!data.game.autoTarget;
+    Game.autoAttack = !!data.game.autoAttack;
+
+    Player.x = Number(data.player.x ?? 0) || 0;
+    Player.y = Number(data.player.y ?? 0) || 0;
+    Player.r = Number(data.player.r ?? 14) || 14;
+    Player.spd = Number(data.player.spd ?? 220) || 220;
+    Player.atk = Number(data.player.atk ?? 14) || 14;
+    Player.dashTime = Number(data.player.dashTime ?? 0) || 0;
+    Player.dashCd = Number(data.player.dashCd ?? 0) || 0;
+
+    Mobs.length = 0;
+    if (Array.isArray(data.mobs)){
+      for (const m of data.mobs){
+        if (!m) continue;
+        Mobs.push({
+          kind: m.kind || "slime",
+          x: Number(m.x ?? 0) || 0,
+          y: Number(m.y ?? 0) || 0,
+          r: Number(m.r ?? 14) || 14,
+          hp: Number(m.hp ?? 45) || 45,
+          hpMax: Number(m.hpMax ?? 45) || 45,
+          phase: Number(m.phase ?? 0) || 0,
+        });
+      }
+    }
+
+    Inv.length = 0;
+    if (Array.isArray(data.inv)){
+      for (const i of data.inv){
+        if (!i) continue;
+        Inv.push({ name: String(i.name ?? "아이템"), desc: String(i.desc ?? "") });
+      }
+    }
+
+    // 버튼 상태 동기화
+    btnToggleTarget.classList.toggle("on", Game.autoTarget);
+    btnToggleAtk.classList.toggle("on", Game.autoAttack);
+
+    syncHUD();
+  }
+
+  function getSaveMeta(){
+    const raw = localStorage.getItem(SAVE_KEY);
+    if (!raw) return null;
+    const data = safeJSONParse(raw);
+    if (!data || !data.savedAt) return null;
+    return {
+      savedAt: data.savedAt,
+      scene: data.game?.scene ?? "menu",
+      stageId: data.game?.stageId ?? "-",
+      v: data.v ?? "-"
+    };
+  }
+
+  function fmtTime(ts){
+    const d = new Date(ts);
+    const yy = d.getFullYear();
+    const mm = String(d.getMonth()+1).padStart(2,"0");
+    const dd = String(d.getDate()).padStart(2,"0");
+    const hh = String(d.getHours()).padStart(2,"0");
+    const mi = String(d.getMinutes()).padStart(2,"0");
+    return `${yy}-${mm}-${dd} ${hh}:${mi}`;
+  }
+
+  function refreshSaveUI(){
+    const meta = getSaveMeta();
+    if (!meta){
+      saveChip.textContent = "저장: 없음";
+      saveChip.classList.remove("good","bad"); saveChip.classList.add("warn");
+      saveInfo.textContent = "저장 없음";
+      saveBadge.textContent = "EMPTY";
+      saveBadge.className = "chip";
+      return;
+    }
+    saveChip.textContent = `저장: ${fmtTime(meta.savedAt)}`;
+    saveChip.classList.remove("warn","bad"); saveChip.classList.add("good");
+
+    saveInfo.textContent = `${fmtTime(meta.savedAt)} · 장면:${meta.scene} · 스테이지:${meta.stageId}`;
+    saveBadge.textContent = "SAVED";
+    saveBadge.className = "chip good";
+  }
+
+  function doSave(){
+    const data = snapshot();
+    localStorage.setItem(SAVE_KEY, JSON.stringify(data));
+    refreshSaveUI();
+    toast("<b>저장 완료</b>", 1100);
+  }
+
+  function doLoad(){
+    const raw = localStorage.getItem(SAVE_KEY);
+    if (!raw){
+      toast("<b>저장 데이터 없음</b>", 1100);
+      return;
+    }
+    const data = safeJSONParse(raw);
+    if (!data){
+      toast("<b>저장 데이터 손상</b>", 1100);
+      return;
+    }
+    applySnapshot(data);
+    refreshSaveUI();
+    toast("<b>불러오기 완료</b>", 1100);
+    closeAll();
+  }
+
+  function doDeleteSave(){
+    localStorage.removeItem(SAVE_KEY);
+    refreshSaveUI();
+    toast("<b>저장삭제 완료</b>", 1100);
+  }
+
+  // ----------------- 버튼 동작 -----------------
+  bind(btnMenu, "메뉴", ()=>{ menuModal.classList.toggle("show"); invModal.classList.remove("show"); refreshSaveUI(); toast("<b>메뉴</b> 열림", 900); });
   bind(btnInv,  "인벤", ()=>{ menuModal.classList.remove("show"); openInv(); toast("<b>인벤</b> 열림", 900); });
+
   bind(btnStage,"스테이지", ()=>{ setScene("stage","1-1",300); toast("<b>스테이지 1-1</b> 시작", 1100); closeAll(); });
   bind(btnBoss, "보스", ()=>{ setScene("boss","BOSS",240); toast("<b>보스전</b> 시작", 1100); closeAll(); });
 
@@ -686,14 +910,37 @@ ${e.error && e.error.stack ? ("\n" + e.error.stack) : ""}`;
 
   bind(btnStartStage,"메뉴:스테이지시작", ()=>{ setScene("stage","1-1",300); toast("<b>스테이지 1-1</b> 시작", 1100); closeAll(); });
   bind(btnStartBoss, "메뉴:보스시작", ()=>{ setScene("boss","BOSS",240); toast("<b>보스전</b> 시작", 1100); closeAll(); });
-  bind(btnEndRun,    "스테이지종료", ()=>{ setScene("menu",null,0); toast("종료: 감정권 <b>+1</b>(데모)", 1200); closeAll(); });
+  bind(btnEndRun,    "스테이지종료", ()=>{ setScene("menu",null,0); toast("종료(데모)", 900); closeAll(); });
 
   bind(btnAttack,"공격", ()=>{ toast("공격!", 600); });
   bind(btnDash,  "대시", ()=>{ Player.dashTime = 0.12; Player.dashCd = 0.8; toast("대시!", 600); });
 
-  bind(btnToggleTarget,"오토타겟", ()=>{ Game.autoTarget = !Game.autoTarget; btnToggleTarget.classList.toggle("on", Game.autoTarget); toast(`오토 타겟: <b>${Game.autoTarget?"ON":"OFF"}</b>`, 900); });
-  bind(btnToggleAtk,   "오토공격", ()=>{ Game.autoAttack = !Game.autoAttack; btnToggleAtk.classList.toggle("on", Game.autoAttack); toast(`오토 공격: <b>${Game.autoAttack?"ON":"OFF"}</b>`, 900); });
-  bind(btnReset,       "리셋", ()=>{ setScene("menu",null,0); toast("<b>리셋</b> 완료", 900); closeAll(); });
+  function toggleTarget(){
+    Game.autoTarget = !Game.autoTarget;
+    btnToggleTarget.classList.toggle("on", Game.autoTarget);
+    toast(`오토 타겟: <b>${Game.autoTarget?"ON":"OFF"}</b>`, 900);
+  }
+  function toggleAtk(){
+    Game.autoAttack = !Game.autoAttack;
+    btnToggleAtk.classList.toggle("on", Game.autoAttack);
+    toast(`오토 공격: <b>${Game.autoAttack?"ON":"OFF"}</b>`, 900);
+  }
+
+  bind(btnToggleTarget,"오토타겟", toggleTarget);
+  bind(btnToggleAtk,   "오토공격", toggleAtk);
+  bind(btnToggleTarget2,"오토타겟(메뉴)", toggleTarget);
+  bind(btnToggleAtk2,   "오토공격(메뉴)", toggleAtk);
+
+  bind(btnQuickSave, "퀵저장", ()=> doSave());
+  bind(btnReset,     "리셋", ()=>{ setScene("menu",null,0); toast("<b>리셋</b> 완료", 900); closeAll(); });
+
+  bind(btnSave,       "저장", ()=> doSave());
+  bind(btnLoad,       "불러오기", ()=> doLoad());
+  bind(btnDeleteSave, "저장삭제", ()=> doDeleteSave());
+
+  bind(btnHardRefreshHint, "새로고침팁", ()=>{
+    toast("모바일: 새로고침 길게 → <b>캐시 비우고 강력 새로고침</b>", 1600);
+  });
 
   bind(btnDebug, "디버그", ()=>{
     const on = debugPanel.style.display !== "block";
@@ -701,7 +948,7 @@ ${e.error && e.error.stack ? ("\n" + e.error.stack) : ""}`;
     toast(on ? "DEBUG ON" : "DEBUG OFF", 700);
   });
 
-  // ---------- 조이스틱 ----------
+  // ----------------- 조이스틱 -----------------
   const Joy = { active:false, id:null, cx:0, cy:0, x:0, y:0, maxR:52 };
 
   function resetStick(){
@@ -752,7 +999,7 @@ ${e.error && e.error.stack ? ("\n" + e.error.stack) : ""}`;
   joy.addEventListener("pointerup", endJoy, { passive:false });
   joy.addEventListener("pointercancel", endJoy, { passive:false });
 
-  // ---------- 루프(무조건 그리기) ----------
+  // ----------------- 루프(무조건 그리기) -----------------
   let last = now();
   let fpsAcc=0, fpsFrames=0, fps=60;
 
@@ -786,7 +1033,7 @@ ${e.error && e.error.stack ? ("\n" + e.error.stack) : ""}`;
     Player.dashTime = Math.max(0, Player.dashTime - dt);
     Player.dashCd   = Math.max(0, Player.dashCd - dt);
 
-    // 몬스터 간단 움직임(“살아있다” 표시)
+    // 몬스터 “살아있다” 표시
     for (const m of Mobs){
       m.phase += dt * (m.kind==="boss" ? 1.2 : 1.8);
     }
@@ -796,21 +1043,19 @@ ${e.error && e.error.stack ? ("\n" + e.error.stack) : ""}`;
     const w = window.innerWidth;
     const h = window.innerHeight;
 
-    // 배경
     ctx.clearRect(0,0,w,h);
     ctx.fillStyle = "rgba(0,0,0,0.25)";
     ctx.fillRect(0,0,w,h);
 
-    // 화면 중심을 원점으로 쓰기
     ctx.save();
     ctx.translate(w/2, h/2);
 
-    // 안내 텍스트(캔버스에 직접 찍어서 “완전 검정” 방지)
+    // 안내 텍스트
     ctx.fillStyle = "rgba(255,255,255,0.82)";
     ctx.font = "700 16px system-ui, sans-serif";
     ctx.textAlign = "left";
     ctx.textBaseline = "top";
-    ctx.fillText("보스게이트 v4 - 화면에 원이 보이면 렌더링 정상", -w/2 + 16, -h/2 + 16);
+    ctx.fillText("보스게이트 v4.1 - 저장/불러오기/저장삭제 메뉴 포함", -w/2 + 16, -h/2 + 16);
 
     // 몬스터
     for (const m of Mobs){
@@ -824,7 +1069,7 @@ ${e.error && e.error.stack ? ("\n" + e.error.stack) : ""}`;
       ctx.fill();
     }
 
-    // 플레이어(무조건 보임)
+    // 플레이어
     ctx.fillStyle = "rgba(255,255,255,0.95)";
     ctx.beginPath();
     ctx.arc(Player.x, Player.y, Player.r, 0, Math.PI*2);
@@ -852,19 +1097,18 @@ ${e.error && e.error.stack ? ("\n" + e.error.stack) : ""}`;
     requestAnimationFrame(loop);
   }
 
-  // ---------- 시작 ----------
+  // ----------------- 시작 -----------------
   btnToggleTarget.classList.toggle("on", Game.autoTarget);
   btnToggleAtk.classList.toggle("on", Game.autoAttack);
 
-  // 처음엔 메뉴 + 플레이어만 보이게
   setScene("menu", null, 0);
+  refreshSaveUI();
 
-  toast("<b>초안정 v4</b> 로딩 완료", 1400);
-  toast("상단 <b>스테이지</b> 눌러봐", 1400);
+  toast("<b>v4.1</b> 로딩 완료", 1200);
+  toast("메뉴에 <b>저장/불러오기/저장삭제</b> 추가됨", 1400);
 
   log("init ok");
   loop();
-
 })();
 </script>
 </body>
