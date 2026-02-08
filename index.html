@@ -12,6 +12,7 @@
     <header class="topbar">
       <div class="title">액션 캔버스 RPG</div>
       <div class="top-actions">
+        <button id="btnAuto" class="btn primary">자동사냥: OFF</button>
         <button id="btnPause" class="btn ghost">일시정지</button>
         <button id="btnSave" class="btn ghost">저장</button>
         <button id="btnReset" class="btn danger">리셋</button>
@@ -34,20 +35,20 @@
             <button id="btnSkill" class="btn big">스킬</button>
             <button id="btnDodge" class="btn big ghost">회피</button>
             <button id="btnPotion" class="btn big">포션</button>
+            <button id="btnPickup" class="btn big ghost">줍기</button>
           </div>
         </div>
       </section>
 
       <aside class="panel">
         <div class="card">
-          <div class="card-title">상태</div>
+          <div class="card-title">상태 / 스테이지</div>
           <div id="hud" class="mono small"></div>
           <div class="hr"></div>
           <div class="row gap wrap">
             <button id="btnTown" class="btn">마을</button>
-            <button id="btnField" class="btn">필드</button>
-            <button id="btnDungeon" class="btn">던전</button>
-            <button id="btnBoss" class="btn danger">보스</button>
+            <button id="btnEnterStage" class="btn primary">스테이지 입장</button>
+            <button id="btnPortalHint" class="btn ghost">문 찾기</button>
           </div>
         </div>
 
@@ -74,8 +75,8 @@
         </div>
 
         <div class="hint small">
-          PC 조작: 이동(WASD/방향키) · 공격(J/Space) · 스킬(K) · 회피(L/Shift) · 포션(H) · 줍기(E)<br/>
-          모바일: 왼쪽 조이스틱 + 오른쪽 버튼
+          PC: 이동(WASD/방향키) · 공격(J/Space) · 스킬(K) · 회피(L/Shift) · 포션(H) · 줍기(E)<br/>
+          자동사냥: 우상단 버튼(오토 타겟/오토 공격/오토 줍기) / 스테이지: 몬스터 처치 → 문 생성 → 문 진입
         </div>
       </aside>
     </main>
