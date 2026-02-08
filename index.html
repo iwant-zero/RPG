@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+  <meta name="theme-color" content="#0b0f18" />
+  <title>액션 캔버스 RPG</title>
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <div id="app">
+    <header class="topbar">
+      <div class="title">액션 캔버스 RPG</div>
+      <div class="top-actions">
+        <button id="btnPause" class="btn ghost">일시정지</button>
+        <button id="btnSave" class="btn ghost">저장</button>
+        <button id="btnReset" class="btn danger">리셋</button>
+      </div>
+    </header>
+
+    <main class="layout">
+      <section class="stage">
+        <canvas id="game" width="960" height="540"></canvas>
+
+        <!-- 모바일 HUD -->
+        <div class="touchHUD">
+          <div class="joystick" id="joy">
+            <div class="joyBase"></div>
+            <div class="joyStick" id="joyStick"></div>
+          </div>
+
+          <div class="touchBtns">
+            <button id="btnAtk" class="btn primary big">공격</button>
+            <button id="btnSkill" class="btn big">스킬</button>
+            <button id="btnDodge" class="btn big ghost">회피</button>
+            <button id="btnPotion" class="btn big">포션</button>
+          </div>
+        </div>
+      </section>
+
+      <aside class="panel">
+        <div class="card">
+          <div class="card-title">상태</div>
+          <div id="hud" class="mono small"></div>
+          <div class="hr"></div>
+          <div class="row gap wrap">
+            <button id="btnTown" class="btn">마을</button>
+            <button id="btnField" class="btn">필드</button>
+            <button id="btnDungeon" class="btn">던전</button>
+            <button id="btnBoss" class="btn danger">보스</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">장비</div>
+          <div id="equip" class="mono small"></div>
+          <div class="hr"></div>
+          <div class="row gap wrap">
+            <button id="btnAutoEquip" class="btn">자동 장착</button>
+            <button id="btnEnhance" class="btn ghost">강화</button>
+            <button id="btnGacha" class="btn">뽑기</button>
+            <button id="btnSell" class="btn ghost">잡템 판매</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">인벤토리</div>
+          <div id="inv" class="inv"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">로그</div>
+          <div id="log" class="log"></div>
+        </div>
+
+        <div class="hint small">
+          PC 조작: 이동(WASD/방향키) · 공격(J/Space) · 스킬(K) · 회피(L/Shift) · 포션(H) · 줍기(E)<br/>
+          모바일: 왼쪽 조이스틱 + 오른쪽 버튼
+        </div>
+      </aside>
+    </main>
+  </div>
+
+  <script src="./game.js"></script>
+</body>
+</html>
