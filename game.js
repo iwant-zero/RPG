@@ -2,15 +2,18 @@
   "use strict";
 
   // ============================================================
-  // 보스게이트 (BOSS GATE)
-  // Flash-like Side Action RPG (Canvas2D)
-  // - Menu / Continue / Options
-  // - SpriteSheet Animation (PNG optional)
-  // - Hit FX / Damage Numbers / Screen Shake / Particles
-  // - BGM + SFX (WebAudio fallback, optional audio files)
-  // - Stage 1-1.. + Boss Door every 5 stages
-  // - PC + Mobile controls
-  // - Minimal inventory/equipment + random affix + appraisal
+  // 보스게이트 (BOSS GATE) - Flash-like Side Action RPG (Canvas2D)
+  // ✅ 변경사항
+  // 1) 화면 흔들림(카메라 shake) 제거 → 화면 고정
+  // 2) 인게임 종료/일시정지 메뉴(PAUSE) 추가
+  // 3) 메뉴 로고: 플래쉬식 번쩍임/글로우/플리커 연출
+  //
+  // 자산 파일(없으면 자동으로 도형 렌더링):
+  // /assets/bg.png
+  // /assets/player_sheet.png
+  // /assets/slime_sheet.png
+  // /assets/fx_hit.png
+  // /assets/bgm.mp3 /assets/sfx_hit.mp3 /assets/sfx_coin.mp3
   // ============================================================
 
   // -------------------- DOM/Canvas --------------------
@@ -37,7 +40,6 @@
   const isoNow = () => new Date().toISOString();
 
   // -------------------- Save --------------------
-  // 게임명 변경에 맞춰 저장키도 변경(이전 테스트 저장과 충돌 방지)
   const SAVE_KEY = "boss_gate_web_v1";
   function save(state) {
     try { localStorage.setItem(SAVE_KEY, JSON.stringify(state)); } catch {}
@@ -52,12 +54,11 @@
 
   // -------------------- Game States --------------------
   const GS = {
-    BOOT: "BOOT",
     MENU: "MENU",
     OPTIONS: "OPTIONS",
     PLAY: "PLAY",
     PAUSE: "PAUSE",
-    INVENTORY: "INVENTORY"
+    INVENTORY: "INVENTORY",
   };
 
   // -------------------- Audio --------------------
@@ -68,6 +69,7 @@
       this.bgmGain = null;
       this.sfxGain = null;
       this.unlocked = false;
+
       this.muted = false;
       this.bgmOn = true;
       this.sfxOn = true;
@@ -108,6 +110,7 @@
       } catch {}
       this.unlocked = true;
 
+      // 작은 무음 재생으로 모바일 오디오 언락 보조
       if (this.ctx) {
         const o = this.ctx.createOscillator();
         const g = this.ctx.createGain();
@@ -167,6 +170,7 @@
       bgm.volume = 0.5;
       bgm.loop = true;
       bgm.play().catch(() => {
+        // 파일이 없으면 간단한 톤 BGM으로 대체
         this.ensureCtx();
         if (!this.ctx) return;
         if (this._bgmNode) return;
@@ -201,7 +205,6 @@
   }
 
   const audio = new AudioMan();
-
   const unlockOnce = async () => {
     await audio.unlock();
     audio.startBgm();
@@ -213,17 +216,23 @@
 
   // -------------------- Input --------------------
   const keys = new Set();
-  const pressed = { jump:false, atk:false, skill:false, menu:false };
+  const pressed = { jump:false, atk:false, skill:false, menu:false, inv:false };
 
   window.addEventListener("keydown", (e) => {
     const k = e.key.toLowerCase();
-    if (["arrowleft","arrowright","arrowup"," ","z","x","escape","i"].includes(k)) e.preventDefault();
+    if (["arrowleft","arrowright","arrowup"," ","z","x","escape","i","p"].includes(k)) e.preventDefault();
+
     keys.add(k);
+
     if (k === " " || k === "arrowup") pressed.jump = true;
     if (k === "z") pressed.atk = true;
     if (k === "x") pressed.skill = true;
-    if (k === "escape") pressed.menu = true;
-    if (k === "i") pressed.menu = true;
+
+    // ✅ 인게임 메뉴/일시정지
+    if (k === "escape" || k === "p") pressed.menu = true;
+
+    // ✅ 인벤토리 토글(I)
+    if (k === "i") pressed.inv = true;
   }, { passive:false });
 
   window.addEventListener("keyup", (e) => keys.delete(e.key.toLowerCase()));
@@ -246,7 +255,7 @@
       if (k === "jump") pressed.jump = true;
       if (k === "atk") pressed.atk = true;
       if (k === "skill") pressed.skill = true;
-      if (k === "menu") pressed.menu = true;
+      if (k === "menu") pressed.menu = true; // ✅ 모바일 MENU는 일시정지 메뉴
     }, { passive:false });
 
     touch.addEventListener("pointerup", (e) => {
@@ -284,7 +293,7 @@
     player: loadImage("./assets/player_sheet.png"),
     slime: loadImage("./assets/slime_sheet.png"),
     fxHit: loadImage("./assets/fx_hit.png"),
-    bg: loadImage("./assets/bg.png")
+    bg: loadImage("./assets/bg.png"),
   };
 
   // -------------------- SpriteSheet --------------------
@@ -313,6 +322,7 @@
       if (ok) {
         ctx.drawImage(img, sx, sy, this.fw, this.fh, -this.fw*scale/2, -this.fh*scale/2, this.fw*scale, this.fh*scale);
       } else {
+        // 이미지가 없으면 도형 대체
         ctx.fillStyle = "rgba(91,140,255,0.95)";
         if (name === "hurt") ctx.fillStyle = "rgba(255,91,110,0.95)";
         if (name === "attack") ctx.fillStyle = "rgba(255,207,91,0.95)";
@@ -448,7 +458,7 @@
     return plats;
   }
 
-  // -------------------- Items (minimal) --------------------
+  // -------------------- Items --------------------
   const SLOTS = ["weapon","armor","ring"];
   const RAR = [
     {k:"N", name:"일반", w:60, opt:0, mult:1.00},
@@ -706,8 +716,8 @@
   }
 
   // -------------------- Camera --------------------
-  const cam = { x:0, y:0, shake:0 };
-  function shake(str){ cam.shake = Math.max(cam.shake, str); }
+  // ✅ 화면 흔들림 제거: cam.shake 사용하지 않음
+  const cam = { x:0, y:0 };
 
   // -------------------- UI helpers --------------------
   function roundRect(x, y, w, h, r, fill, stroke){
@@ -800,8 +810,11 @@
       dmgText: [],
       parts: [],
 
-      msg: "보스문을 부숴라. 모바일/PC 모두 지원!",
-      msgT: 2.2
+      msg: "보스문을 부숴라. (ESC/P: 메뉴, I: 인벤)",
+      msgT: 2.2,
+
+      // 로고 애니 시간
+      t: 0,
     };
   }
 
@@ -863,7 +876,6 @@
     for (let i=0;i<14;i++){
       state.parts.push(new Particle(x,y, rand(-220,220), rand(-260, -40), rand(0.18, 0.35), "rgba(255,235,120,0.95)"));
     }
-    shake(7);
     audio.playHit();
   }
 
@@ -919,9 +931,7 @@
     ent.y = clamp(ent.y, 40, WORLD.h - 40);
   }
 
-  // -------------------- Game logic --------------------
-  function updateMenu(){}
-
+  // -------------------- Start/New --------------------
   function startNew(state){
     const fresh = freshState();
     fresh.opt = state.opt;
@@ -954,7 +964,6 @@
     collidePlatforms(p, state.platforms);
 
     if (p.inv > 0) p.anim = "hurt";
-    else if (p.atkCd > 0.02 && p.anim === "attack") {}
     else if (!p.onGround) p.anim = "jump";
     else if (Math.abs(ax) > 0.05) p.anim = "run";
     else p.anim = "idle";
@@ -995,7 +1004,7 @@
           }
         }
       }
-      if (hit === 0) { shake(2); audio.playHit(); }
+      if (hit === 0) audio.playHit();
     }
     pressed.atk = false;
 
@@ -1004,7 +1013,6 @@
       p.skillCd = 2.8;
       p.atkCd = 0.42;
       p.anim = "attack"; p.animT = 0;
-      shake(10);
 
       const hx = p.x + p.face * 78;
       const hy = p.y - 12;
@@ -1052,11 +1060,11 @@
       e.vy += 1100 * dt;
       collidePlatforms(e, state.platforms);
 
+      // 충돌 공격
       if (p.inv <= 0 && aabb(p.x - p.w/2, p.y - p.h/2, p.w, p.h, e.x - e.w/2, e.y - e.h/2, e.w, e.h)) {
         const { dmg } = damageCalc(e.atk, d.def, 0, 1);
         p.hp = clamp(p.hp - dmg, 0, d.hpMax);
         p.inv = 0.45;
-        shake(8);
         audio.playHit();
         state.dmgText.push(new DamageText(p.x, p.y - 64, `-${dmg}`, "rgba(255,91,110,0.95)"));
 
@@ -1126,7 +1134,7 @@
       }
     }
 
-    // 문 충돌
+    // 문 충돌 → 다음 스테이지
     if (state.door) {
       const d0 = state.door;
       if (aabb(p.x - p.w/2, p.y - p.h/2, p.w, p.h, d0.x, d0.y, d0.w, d0.h)) {
@@ -1147,25 +1155,28 @@
 
     if (state.msgT > 0) state.msgT -= dt;
 
-    // 카메라
+    // ✅ 카메라: 흔들림 없이 고정 추적
     const viewW = canvas.getBoundingClientRect().width;
     const viewH = canvas.getBoundingClientRect().height;
+    cam.x = clamp(p.x - viewW*0.45, 0, WORLD.w - viewW);
+    cam.y = clamp(p.y - viewH*0.60, 0, WORLD.h - viewH);
 
-    cam.shake = Math.max(0, cam.shake - dt * 18);
-    const sx = (Math.random()-0.5)*cam.shake;
-    const sy = (Math.random()-0.5)*cam.shake;
-
-    cam.x = clamp(p.x - viewW*0.45, 0, WORLD.w - viewW) + sx;
-    cam.y = clamp(p.y - viewH*0.60, 0, WORLD.h - viewH) + sy;
-
-    // 인벤 토글
+    // ✅ 인게임 메뉴/인벤 토글
     if (pressed.menu) {
       pressed.menu = false;
-      state.gs = (state.gs === GS.PLAY) ? GS.INVENTORY : GS.PLAY;
+      state.gs = GS.PAUSE;
+      save(state);
+      return;
+    }
+    if (pressed.inv) {
+      pressed.inv = false;
+      state.gs = GS.INVENTORY;
+      save(state);
+      return;
     }
   }
 
-  // -------------------- Render --------------------
+  // -------------------- Render helpers --------------------
   function drawBackground(state, viewW, viewH){
     if (IMG.bg.ok) {
       const img = IMG.bg.img;
@@ -1182,15 +1193,6 @@
       g.addColorStop(1, "#070a14");
       ctx.fillStyle = g;
       ctx.fillRect(0,0,viewW,viewH);
-
-      ctx.globalAlpha = 0.35;
-      ctx.fillStyle = "rgba(255,255,255,0.18)";
-      for (let i=0;i<50;i++){
-        const x = (i*97 + (cam.x*0.15)) % viewW;
-        const y = (i*53) % (viewH*0.6);
-        ctx.fillRect(x, y, 2, 2);
-      }
-      ctx.globalAlpha = 1;
     }
   }
 
@@ -1266,7 +1268,7 @@
     ctx.font = "bold 12px ui-monospace, Menlo, Consolas";
     ctx.fillText(`BOSS GATE | STAGE ${stageLabel(state.stageIndex)} ${state.inBossRoom ? "(BOSS)" : ""} | KILL ${state.killed}/${state.goalKills}`, 350, 38);
     ctx.fillText(`HP ${p.hp}/${d.hpMax}  ATK ${d.atk} DEF ${d.def} CRIT ${d.crit}%  SPD ${d.spd}`, 350, 56);
-    ctx.fillText(`${p.gold}G  |  Z:공격  X:스킬  Space:점프  I/Esc:메뉴`, 350, 72);
+    ctx.fillText(`ESC/P: 메뉴  |  I: 인벤  |  Z:공격  X:스킬  Space:점프`, 350, 72);
 
     if (state.msgT > 0 && state.msg) {
       ctx.globalAlpha = clamp(state.msgT/0.5, 0, 1);
@@ -1279,17 +1281,65 @@
     }
   }
 
+  // ✅ 로고 연출 (플래쉬식 번쩍임/글로우/플리커)
+  function drawBossGateLogo(cx, cy, t){
+    const flick = 0.6 + 0.4*Math.sin(t*2.6) + (Math.sin(t*17.0)*0.08);
+    const glow = 12 + 10*(0.5+0.5*Math.sin(t*3.2));
+    const shine = 0.35 + 0.65*(0.5+0.5*Math.sin(t*1.25));
+
+    // 상단 작은 텍스트
+    ctx.save();
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+
+    ctx.font = "900 46px system-ui, -apple-system, Segoe UI";
+    ctx.shadowColor = `rgba(91,140,255,${0.55*flick})`;
+    ctx.shadowBlur = glow;
+    ctx.fillStyle = `rgba(235,240,255,${0.92})`;
+    ctx.fillText("보스게이트", cx, cy-10);
+
+    // 영문 라벨
+    ctx.font = "800 16px ui-monospace, Menlo, Consolas";
+    ctx.shadowColor = `rgba(255,235,120,${0.35*shine})`;
+    ctx.shadowBlur = 10;
+    ctx.fillStyle = `rgba(255,235,120,${0.85})`;
+    ctx.fillText("BOSS GATE", cx, cy+26);
+
+    // 플래쉬 번쩍 라인(로고 스윕)
+    const w = 520;
+    const h = 64;
+    const x0 = cx - w/2;
+    const y0 = cy - 42;
+    const sweepX = x0 + (t*220 % (w+160)) - 80;
+
+    const grad = ctx.createLinearGradient(sweepX, 0, sweepX+120, 0);
+    grad.addColorStop(0, "rgba(255,255,255,0)");
+    grad.addColorStop(0.5, `rgba(255,255,255,${0.25*shine})`);
+    grad.addColorStop(1, "rgba(255,255,255,0)");
+
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = grad;
+    roundRect(x0, y0, w, h, 12, true, false);
+
+    ctx.restore();
+  }
+
   function drawMenu(state, viewW, viewH){
     drawBackground(state, viewW, viewH);
 
-    // ✅ 메뉴 타이틀을 보스게이트로 변경
-    panel(viewW*0.5-260, viewH*0.5-190, 520, 380, "보스게이트 (BOSS GATE)");
+    const px = viewW*0.5-260, py = viewH*0.5-190;
+    panel(px, py, 520, 380, " ");
+
+    // ✅ 로고 연출 표시
+    drawBossGateLogo(viewW*0.5, viewH*0.5-110, state.t);
 
     ctx.fillStyle = "rgba(235,240,255,0.75)";
     ctx.font = "14px system-ui, -apple-system, Segoe UI";
-    ctx.fillText("스테이지를 뚫고, 보스문을 부숴라.", viewW*0.5-238, viewH*0.5-148);
+    ctx.textAlign = "center";
+    ctx.fillText("스테이지를 뚫고, 보스문을 부숴라.", viewW*0.5, viewH*0.5-62);
+    ctx.textAlign = "left";
 
-    const bx = viewW*0.5-180, by = viewH*0.5-90, bw=360, bh=52;
+    const bx = viewW*0.5-180, by = viewH*0.5-30, bw=360, bh=52;
     const hasSave = !!load();
 
     btn(bx, by, bw, bh, "새 게임 시작", true);
@@ -1319,7 +1369,7 @@
 
     ctx.fillStyle = "rgba(235,240,255,0.55)";
     ctx.font = "12px ui-monospace, Menlo, Consolas";
-    ctx.fillText("모바일: 버튼 조작 / PC: 방향키 + Z/X + Space", viewW*0.5-190, viewH*0.5+210);
+    ctx.fillText("모바일: 버튼 조작 / PC: 방향키 + Z/X + Space + ESC/P 메뉴 + I 인벤", viewW*0.5-220, viewH*0.5+210);
   }
 
   function drawOptions(state, viewW, viewH){
@@ -1341,6 +1391,96 @@
     ctx.fillStyle = "rgba(235,240,255,0.65)";
     ctx.font = "13px system-ui, -apple-system, Segoe UI";
     ctx.fillText("오디오가 안 나면 화면을 한 번 탭/클릭해서 언락해줘.", viewW*0.5-200, viewH*0.5+70);
+  }
+
+  function drawScene(state, viewW, viewH, dim=false){
+    drawBackground(state, viewW, viewH);
+
+    drawPlatforms(state.platforms);
+    if (state.door) drawDoor(state.door);
+    drawCoins(state.coins);
+    drawLoot(state.loots);
+
+    for (const e of state.enemies) {
+      const x = e.x - cam.x;
+      const y = e.y - cam.y;
+      const flip = (e.face === -1);
+      const name = e.dead ? "die" : e.anim;
+      const scale = (e.tier==="boss") ? 1.45 : (e.tier==="elite" ? 1.15 : 1.0);
+      slimeSheet.draw(name, x, y-8, e.animT, scale, flip, e.hitCd>0 ? 0.75 : 1);
+
+      if (!e.dead) {
+        const pct = clamp(e.hp/e.hpMax, 0,1);
+        ctx.fillStyle = "rgba(0,0,0,0.35)";
+        ctx.fillRect(x-34*scale, y-56*scale, 68*scale, 8);
+        ctx.fillStyle = (e.tier==="boss") ? "rgba(255,91,110,0.85)" : "rgba(46,229,157,0.85)";
+        ctx.fillRect(x-34*scale, y-56*scale, 68*scale*pct, 8);
+      }
+    }
+
+    const p = state.player;
+    const px = p.x - cam.x;
+    const py = p.y - cam.y;
+    const flipP = (p.face === -1);
+    playerSheet.draw(p.anim, px, py-10, p.animT, 1.15, flipP, p.inv>0 ? 0.65 : 1);
+
+    for (const f of state.fx) f.draw(cam);
+    for (const t of state.dmgText) t.draw(cam);
+    for (const pa of state.parts) pa.draw(cam);
+
+    if (dim) {
+      ctx.fillStyle = "rgba(0,0,0,0.35)";
+      ctx.fillRect(0,0,viewW,viewH);
+    }
+
+    drawHud(state, viewW);
+  }
+
+  function drawPause(state, viewW, viewH){
+    // 게임 화면 위에 메뉴 오버레이
+    drawScene(state, viewW, viewH, true);
+
+    panel(viewW*0.5-260, viewH*0.5-190, 520, 380, "일시정지 / 메뉴 (BOSS GATE)");
+
+    const bx = viewW*0.5-180, by = viewH*0.5-120, bw=360, bh=52;
+
+    btn(bx, by, bw, bh, "재개", true);
+    btn(bx, by+64, bw, bh, "인벤토리", true);
+    btn(bx, by+128, bw, bh, "옵션", false);
+    btn(bx, by+192, bw, bh, "저장 후 타이틀로", false);
+    btn(bx, by+256, bw, bh, "저장 삭제", false);
+
+    // 아래에 “종료” 버튼(새로고침)
+    const ex = viewW*0.5-180, ey = viewH*0.5+200, ew=360, eh=44;
+    btn(ex, ey, ew, eh, "종료(페이지 새로고침)", false);
+
+    if (hitBtn(bx,by,bw,bh)) state.gs = GS.PLAY;
+    if (hitBtn(bx,by+64,bw,bh)) state.gs = GS.INVENTORY;
+    if (hitBtn(bx,by+128,bw,bh)) state.gs = GS.OPTIONS;
+
+    if (hitBtn(bx,by+192,bw,bh)) {
+      save(state);
+      state.gs = GS.MENU;
+      state.msg = "저장 완료. 타이틀로 이동.";
+      state.msgT = 1.5;
+    }
+
+    if (hitBtn(bx,by+256,bw,bh)) {
+      localStorage.removeItem(SAVE_KEY);
+      state.msg = "저장 삭제 완료.";
+      state.msgT = 1.5;
+    }
+
+    if (hitBtn(ex,ey,ew,eh)) {
+      // 브라우저 종료는 불가 → 새로고침으로 사실상 종료 제공
+      location.reload();
+    }
+
+    // ESC/P로 재개
+    if (pressed.menu) {
+      pressed.menu = false;
+      state.gs = GS.PLAY;
+    }
   }
 
   function drawInventory(state, viewW, viewH){
@@ -1408,7 +1548,7 @@
     btn(bx, by, bw, bh, "자동 장착", true);
     btn(bx+180, by, bw, bh, "감정(미감정)", true);
     btn(bx+360, by, bw, bh, "뽑기(골드)", false);
-    btn(bx+540, by, bw, bh, "닫기(I/ESC)", true);
+    btn(bx+540, by, bw, bh, "닫기(I)", true);
 
     if (hitBtn(bx,by,bw,bh)) {
       p.autoEquipBest();
@@ -1448,51 +1588,9 @@
     }
 
     if (hitBtn(bx+540,by,bw,bh)) state.gs = GS.PLAY;
-    if (pressed.menu) { pressed.menu=false; state.gs = GS.PLAY; }
-  }
 
-  function drawScene(state, viewW, viewH, dim=false){
-    drawBackground(state, viewW, viewH);
-
-    drawPlatforms(state.platforms);
-    if (state.door) drawDoor(state.door);
-
-    drawCoins(state.coins);
-    drawLoot(state.loots);
-
-    for (const e of state.enemies) {
-      const x = e.x - cam.x;
-      const y = e.y - cam.y;
-      const flip = (e.face === -1);
-      const name = e.dead ? "die" : e.anim;
-      const scale = (e.tier==="boss") ? 1.45 : (e.tier==="elite" ? 1.15 : 1.0);
-      slimeSheet.draw(name, x, y-8, e.animT, scale, flip, e.hitCd>0 ? 0.75 : 1);
-
-      if (!e.dead) {
-        const pct = clamp(e.hp/e.hpMax, 0,1);
-        ctx.fillStyle = "rgba(0,0,0,0.35)";
-        ctx.fillRect(x-34*scale, y-56*scale, 68*scale, 8);
-        ctx.fillStyle = (e.tier==="boss") ? "rgba(255,91,110,0.85)" : "rgba(46,229,157,0.85)";
-        ctx.fillRect(x-34*scale, y-56*scale, 68*scale*pct, 8);
-      }
-    }
-
-    const p = state.player;
-    const px = p.x - cam.x;
-    const py = p.y - cam.y;
-    const flipP = (p.face === -1);
-    playerSheet.draw(p.anim, px, py-10, p.animT, 1.15, flipP, p.inv>0 ? 0.65 : 1);
-
-    for (const f of state.fx) f.draw(cam);
-    for (const t of state.dmgText) t.draw(cam);
-    for (const pa of state.parts) pa.draw(cam);
-
-    if (dim) {
-      ctx.fillStyle = "rgba(0,0,0,0.35)";
-      ctx.fillRect(0,0,viewW,viewH);
-    }
-
-    drawHud(state, viewW);
+    if (pressed.inv) { pressed.inv=false; state.gs = GS.PLAY; }
+    if (pressed.menu) { pressed.menu=false; state.gs = GS.PAUSE; }
   }
 
   function render(state){
@@ -1503,6 +1601,7 @@
 
     if (state.gs === GS.MENU) drawMenu(state, viewW, viewH);
     else if (state.gs === GS.OPTIONS) drawOptions(state, viewW, viewH);
+    else if (state.gs === GS.PAUSE) drawPause(state, viewW, viewH);
     else if (state.gs === GS.INVENTORY) drawInventory(state, viewW, viewH);
     else drawScene(state, viewW, viewH);
 
@@ -1537,8 +1636,8 @@
     st.msg = raw.msg ?? st.msg;
     st.msgT = raw.msgT ?? 0;
 
-    // 게임명 필드 보정
     st.game = "보스게이트 (BOSS GATE)";
+    st.t = 0;
 
     return st;
   }
@@ -1553,8 +1652,9 @@
     const dt = Math.min(0.033, (t - last)/1000);
     last = t;
 
+    state.t += dt;
+
     if (state.gs === GS.PLAY) updatePlay(state, dt);
-    else if (state.gs === GS.MENU) updateMenu(state, dt);
 
     state.updatedAt = isoNow();
     if (Math.random() < 0.03) save(state);
