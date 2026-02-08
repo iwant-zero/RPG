@@ -1,13 +1,10 @@
 :root{
   --bg:#0b0f18;
-  --panel:#10182b;
-  --card:#0f1626;
   --text:#e9eefc;
   --muted:#a9b3cf;
   --line:#24314d;
   --primary:#5b8cff;
   --danger:#ff5b6e;
-  --good:#2ee59d;
   --shadow: 0 10px 30px rgba(0,0,0,.35);
   --radius: 16px;
   --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono","Courier New", monospace;
@@ -61,7 +58,7 @@ body{
   width:100%;
   height:100%;
   display:block;
-  touch-action: none; /* 중요: 모바일 드래그/줌 방지 */
+  touch-action: none;
 }
 
 .panel{display:flex; flex-direction:column; gap:14px;}
