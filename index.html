@@ -4,12 +4,11 @@
   <meta charset="utf-8" />
   <meta name="viewport"
         content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
-  <title>보스게이트 - 통합 최신본(먹통/검정화면 안정화)</title>
+  <title>보스게이트 - 통합 최신본(먹통/검정화면 안정화 v2)</title>
   <style>
     :root{
       --bg:#070a12;
       --panel: rgba(12,18,38,0.86);
-      --panel2: rgba(15,24,48,0.92);
       --line: rgba(255,255,255,0.12);
       --text: rgba(255,255,255,0.92);
       --muted: rgba(255,255,255,0.65);
@@ -20,7 +19,6 @@
       --btn2:#243a77;
       --btnDown:#0f1c3f;
       --shadow: 0 10px 30px rgba(0,0,0,0.35);
-      --radius: 14px;
       --radius2: 18px;
       --font: ui-sans-serif, system-ui, -apple-system, "Apple SD Gothic Neo", "Noto Sans KR", Segoe UI, Roboto, Arial, sans-serif;
     }
@@ -37,8 +35,6 @@
       user-select:none;
     }
 
-    /* 전역에서 touch-action none을 강하게 걸면, 일부 브라우저에서 버튼 이벤트가 씹히는 케이스가 있음
-       → app 컨테이너와 캔버스, 조이스틱에서만 제스처 차단 */
     #app{
       position:fixed;
       inset:0;
@@ -112,15 +108,6 @@
       gap:10px;
       align-items:center;
       pointer-events:none;
-    }
-
-    .mini{
-      padding:10px 12px;
-      display:flex;
-      gap:8px;
-      align-items:center;
-      white-space:nowrap;
-      pointer-events:auto;
     }
 
     .chip{
@@ -247,7 +234,6 @@
     .toast.show{ opacity:1; transform: translateY(0); }
     .toast b{ color:#fff; }
 
-    /* 모달 */
     .modal{
       position:absolute; inset:0;
       display:none;
@@ -339,7 +325,6 @@
       margin-left:6px;
     }
 
-    /* 에러 오버레이(먹통 원인 표시) */
     #errorOverlay{
       position:absolute;
       inset: 12px;
@@ -450,10 +435,6 @@
             <button class="btn bad" id="btnStartBoss">보스 시작</button>
             <button class="btn ghost" id="btnEndRun">스테이지 종료</button>
           </div>
-          <div style="margin-top:10px; font-size:12px; color:rgba(255,255,255,0.65); line-height:1.45;">
-            · 먹통/검정화면 방지: 입력 처리는 앱 컨테이너 범위에서만 제스처 차단<br/>
-            · 캔버스 컨텍스트는 폴백 생성(호환 안되면 자동으로 기본값 사용)
-          </div>
         </div>
         <div class="box">
           <h3>조작</h3>
@@ -512,12 +493,12 @@
   "use strict";
 
   /* =========================
-     0) 안전장치: 에러 표시
+     0) 에러 오버레이
   ========================= */
   const errorOverlay = document.getElementById("errorOverlay");
   const errorText = document.getElementById("errorText");
-  const btnHideError = document.getElementById("btnHideError");
-  const btnReload = document.getElementById("btnReload");
+  document.getElementById("btnHideError")?.addEventListener("click", ()=>{ errorOverlay.style.display="none"; });
+  document.getElementById("btnReload")?.addEventListener("click", ()=> location.reload());
 
   function showError(msg){
     try{
@@ -541,9 +522,6 @@ ${e.error && e.error.stack ? ("\n" + e.error.stack) : ""}`;
     showError(`[unhandledrejection]\n${reason}`);
   });
 
-  btnHideError?.addEventListener("click", ()=>{ errorOverlay.style.display = "none"; });
-  btnReload?.addEventListener("click", ()=> location.reload());
-
   /* =========================
      1) 유틸
   ========================= */
@@ -556,8 +534,15 @@ ${e.error && e.error.stack ? ("\n" + e.error.stack) : ""}`;
     return (navigator.maxTouchPoints || 0) > 0 || matchMedia("(pointer: coarse)").matches;
   }
 
+  function addNoScroll(el, type, fn){
+    el.addEventListener(type, (e)=>{
+      if (e.cancelable) e.preventDefault();
+      fn && fn(e);
+    }, { passive:false });
+  }
+
   /* =========================
-     2) DOM / Canvas (CTX 폴백)
+     2) DOM / Canvas
   ========================= */
   const app = document.getElementById("app");
   const cv  = document.getElementById("cv");
@@ -573,7 +558,7 @@ ${e.error && e.error.stack ? ("\n" + e.error.stack) : ""}`;
 
   deviceChip.textContent = `기기: ${isMobileLike() ? "스마트폰/태블릿" : "PC"}`;
 
-  // getContext 폴백(모바일에서 옵션 호환 문제로 null 나는 케이스 방지)
+  // 캔버스 컨텍스트 폴백
   function create2DContext(canvas){
     const tries = [
       [{ alpha:false, desynchronized:true }, "alpha:false,desync:true"],
@@ -588,9 +573,7 @@ ${e.error && e.error.stack ? ("\n" + e.error.stack) : ""}`;
           ctxChip.textContent = `CTX: ${label}`;
           return c;
         }
-      }catch(err){
-        // 다음 폴백 시도
-      }
+      }catch(_){}
     }
     ctxChip.textContent = "CTX: FAIL";
     return null;
@@ -602,27 +585,24 @@ ${e.error && e.error.stack ? ("\n" + e.error.stack) : ""}`;
     return;
   }
 
-  /* =========================
-     3) 제스처 차단(앱 범위만)
-        - window 전역 touchstart 막지 않음(먹통 원인 1순위 회피)
-  ========================= */
-  function addNoScroll(el, type, fn){
-    el.addEventListener(type, (e)=>{
-      // pointer/touch에서만 필요하게 최소로 막기
-      if (e.cancelable) e.preventDefault();
-      fn && fn(e);
-    }, { passive:false });
-  }
-
-  // 앱 내부에서만 스크롤/바운스 방지
+  // 앱 내부 제스처 차단(전역 window는 막지 않음)
   addNoScroll(app, "touchmove", ()=>{});
-  addNoScroll(app, "gesturestart", ()=>{});
-  addNoScroll(app, "gesturechange", ()=>{});
-  addNoScroll(app, "gestureend", ()=>{});
   addNoScroll(app, "contextmenu", ()=>{});
 
   /* =========================
-     4) 화면/스케일
+     3) 조이스틱 DOM을 resize보다 먼저 준비 (핵심 수정)
+  ========================= */
+  const joy = document.getElementById("joy");
+  const stick = document.getElementById("stick");
+
+  function resetJoystickVisual(){
+    // 추가 안전장치: stick이 없으면 그냥 통과
+    if (!stick) return;
+    stick.style.transform = "translate(-50%,-50%)";
+  }
+
+  /* =========================
+     4) 화면/스케일 (이제 resetJoystickVisual 호출해도 안전)
   ========================= */
   const View = { dpr:1, vw:0, vh:0, baseW:720, baseH:1280, scale:1, ox:0, oy:0 };
 
@@ -651,7 +631,6 @@ ${e.error && e.error.stack ? ("\n" + e.error.stack) : ""}`;
     cv.width  = Math.floor(View.vw * View.dpr);
     cv.height = Math.floor(View.vh * View.dpr);
 
-    // transform을 매번 재설정(일부 기기에서 누적 버그 방지)
     ctx.setTransform(View.dpr,0,0,View.dpr,0,0);
     ctx.imageSmoothingEnabled = true;
 
@@ -659,10 +638,12 @@ ${e.error && e.error.stack ? ("\n" + e.error.stack) : ""}`;
   }
 
   window.addEventListener("resize", resize, { passive:true });
+
+  // ✅ 초기 resize는 DOM 준비 후 호출
   resize();
 
   /* =========================
-     5) UI / 토스트
+     5) 토스트
   ========================= */
   const toastWrap = document.getElementById("toastWrap");
   const toasts = [];
@@ -750,17 +731,12 @@ ${e.error && e.error.stack ? ("\n" + e.error.stack) : ""}`;
   }
 
   /* =========================
-     7) 조이스틱(가운데 원만 보이고 먹통 방지용: 캡처/해제 엄격)
+     7) 조이스틱 입력(이제 resetJoystickVisual 안전)
   ========================= */
-  const joy = document.getElementById("joy");
-  const stick = document.getElementById("stick");
-
   const Joy = { active:false, pid:null, cx:0, cy:0, x:0, y:0, maxR:52 };
 
-  function resetJoystickVisual(){
-    stick.style.transform = "translate(-50%,-50%)";
-  }
   function setStick(dx,dy){
+    if (!stick) return;
     const r = Math.hypot(dx,dy);
     const m = Joy.maxR;
     let sx=dx, sy=dy;
@@ -805,10 +781,10 @@ ${e.error && e.error.stack ? ("\n" + e.error.stack) : ""}`;
   addNoScroll(joy, "lostpointercapture", endJoy);
 
   /* =========================
-     8) 게임 상태(간단/안정)
+     8) 게임 상태(간단 안정 버전)
   ========================= */
   const Game = {
-    scene: "menu", // menu | stage | boss
+    scene: "menu",
     stageId: null,
     stageTime: 0,
     timeLimit: 0,
@@ -842,7 +818,6 @@ ${e.error && e.error.stack ? ("\n" + e.error.stack) : ""}`;
 
   const World = {
     mobs: [],
-    drops: [],
     nextId: 1,
     camX: 0,
     camY: 0,
@@ -879,7 +854,7 @@ ${e.error && e.error.stack ? ("\n" + e.error.stack) : ""}`;
   }
 
   /* =========================
-     9) 인벤/아이템
+     9) 인벤 (데모)
   ========================= */
   function makeUnidentifiedGear(){
     const id = World.nextId++;
@@ -890,49 +865,26 @@ ${e.error && e.error.stack ? ("\n" + e.error.stack) : ""}`;
       name: "미감정 장비",
       rarity: (Math.random()<0.1) ? "희귀" : (Math.random()<0.35 ? "고급" : "일반"),
       baseAtk: Math.floor(rand(2,6)),
-      latent: {
-        atk: Math.random()<0.55 ? Math.floor(rand(2,10)) : 0,
-        hp:  Math.random()<0.35 ? Math.floor(rand(10,50)) : 0,
-        spd: Math.random()<0.25 ? Math.floor(rand(5,20)) : 0,
-      }
+      latent: { atk: Math.random()<0.55 ? Math.floor(rand(2,10)) : 0 }
     };
   }
-
   function describeItem(it){
-    const r = it.rarity;
-    if (!it.identified) return `${r} / 기본공격 +${it.baseAtk} (잠재: 미공개)`;
-    const L = it.latent || {atk:0,hp:0,spd:0};
-    const parts = [`기본공격 +${it.baseAtk}`];
-    if (L.atk) parts.push(`잠재공격 +${L.atk}`);
-    if (L.hp)  parts.push(`잠재HP +${L.hp}`);
-    if (L.spd) parts.push(`잠재SPD +${L.spd}`);
-    return `${r} / ${parts.join(" · ")}`;
+    if (!it.identified) return `${it.rarity} / 기본공격 +${it.baseAtk} (잠재: 미공개)`;
+    const a = it.latent?.atk ? ` · 잠재공격 +${it.latent.atk}` : "";
+    return `${it.rarity} / 기본공격 +${it.baseAtk}${a}`;
   }
-
   function applyEquipmentStats(){
     Player.atk = 14;
-    Player.hpMax = 100;
-    Player.mpMax = 50;
-    Player.spd = 180;
-
     if (!Game.equipped) return;
-    const it = Game.equipped;
-    Player.atk += it.baseAtk || 0;
-    if (it.identified){
-      const L = it.latent || {atk:0,hp:0,spd:0};
-      Player.atk += L.atk || 0;
-      Player.hpMax += L.hp || 0;
-      Player.spd += L.spd || 0;
-    }
-    Player.hp = clamp(Player.hp, 1, Player.hpMax);
-    Player.mp = clamp(Player.mp, 0, Player.mpMax);
+    Player.atk += Game.equipped.baseAtk || 0;
+    if (Game.equipped.identified) Player.atk += Game.equipped.latent?.atk || 0;
   }
-
   function updateInvUI(){
     invList.innerHTML = "";
     for (const it of Game.inv){
       const row = document.createElement("div");
       row.className = "itemRow";
+
       const left = document.createElement("div");
       left.className = "name";
       const b = document.createElement("b");
@@ -969,7 +921,6 @@ ${e.error && e.error.stack ? ("\n" + e.error.stack) : ""}`;
     ticketTxt.textContent = String(Game.appraisalTickets);
     equipTxt.textContent = Game.equipped ? (Game.equipped.identified ? Game.equipped.name : "미감정 장착") : "-";
   }
-
   function renderInvDetail(){
     const it = Game.inv.find(x=>x.id===Game.selectedInvId);
     if (!it){
@@ -982,7 +933,6 @@ ${e.error && e.error.stack ? ("\n" + e.error.stack) : ""}`;
        <div style="margin-top:8px;color:rgba(255,255,255,0.78);">${describeItem(it)}</div>`;
     updateInvUI();
   }
-
   function equipSelected(){
     const it = Game.inv.find(x=>x.id===Game.selectedInvId);
     if (!it) return toast("선택된 아이템이 없음", 900);
@@ -991,56 +941,39 @@ ${e.error && e.error.stack ? ("\n" + e.error.stack) : ""}`;
     toast("<b>장착</b> 완료", 900);
     updateInvUI();
   }
-
   function appraiseSelected(){
     const it = Game.inv.find(x=>x.id===Game.selectedInvId);
     if (!it) return toast("선택된 아이템이 없음", 900);
     if (it.identified) return toast("이미 감정됨", 900);
     if (Game.appraisalTickets <= 0) return toast("<b>감정권</b> 부족", 1100);
-
     Game.appraisalTickets--;
     it.identified = true;
-    const jackpot = Math.random() < 0.18;
-    it.name = jackpot ? "잠재 폭발 장비" : "감정 장비";
-    if (jackpot){
-      const L = it.latent || (it.latent={atk:0,hp:0,spd:0});
-      if (L.atk) L.atk += Math.floor(rand(4,10));
-      if (L.hp)  L.hp  += Math.floor(rand(20,60));
-      if (L.spd) L.spd += Math.floor(rand(6,18));
-      if (!L.atk && !L.hp && !L.spd) L.atk = Math.floor(rand(6,14));
-      toast("<b>감정 성공!</b> (대박)", 1300);
-    } else {
-      toast("<b>감정 성공!</b>", 1100);
-    }
+    toast("<b>감정 성공!</b>", 1000);
     applyEquipmentStats();
     renderInvDetail();
   }
-
   function dropSelected(){
     const idx = Game.inv.findIndex(x=>x.id===Game.selectedInvId);
-    if (idx < 0) return toast("선택된 아이템이 없음", 900);
+    if (idx<0) return toast("선택된 아이템이 없음", 900);
     const it = Game.inv[idx];
-    if (Game.equipped && Game.equipped.id === it.id){
-      Game.equipped = null;
-      applyEquipmentStats();
-    }
+    if (Game.equipped && Game.equipped.id===it.id) Game.equipped = null;
     Game.inv.splice(idx,1);
     Game.selectedInvId = null;
+    applyEquipmentStats();
     renderInvDetail();
     toast("<b>버림</b> 처리", 900);
   }
 
   /* =========================
-     10) 몬스터/전투
+     10) 몬스터/전투 (데모)
   ========================= */
   function spawnMob(kind,x,y){
     const id = World.nextId++;
     const m = {
       id, kind, x, y, vx:0, vy:0,
       r: kind==="boss" ? 34 : (kind==="elite" ? 18 : 14),
-      hp: kind==="boss" ? 380 : (kind==="elite" ? 90 : 45),
+      hp: kind==="boss" ? 260 : (kind==="elite" ? 90 : 45),
       hpMax: 0,
-      atk: kind==="boss" ? 18 : (kind==="elite" ? 10 : 6),
       spd: kind==="boss" ? 110 : (kind==="elite" ? 140 : 120),
       phase: Math.random()*Math.PI*2
     };
@@ -1048,7 +981,6 @@ ${e.error && e.error.stack ? ("\n" + e.error.stack) : ""}`;
     World.mobs.push(m);
     return m;
   }
-
   function getNearestMob(){
     let best=null, bd=Infinity;
     for (const m of World.mobs){
@@ -1062,17 +994,12 @@ ${e.error && e.error.stack ? ("\n" + e.error.stack) : ""}`;
   function getMobById(id){
     return World.mobs.find(m=>m.id===id) || null;
   }
-
   function dealDamage(m,dmg){
     if (!m || m.hp<=0) return;
     m.hp = Math.max(0, m.hp-dmg);
-    World.shake = Math.min(1, World.shake + 0.18);
-    World.shakeT = 0.18;
-    if (m.hp<=0 && m.kind==="boss"){
-      toast("<b>보스 처치</b>!", 1400);
-    }
+    World.shake = Math.min(1, World.shake + 0.14);
+    World.shakeT = 0.14;
   }
-
   function playerAttack(){
     if (Input.pressed.has("attack")) return;
     Input.pressed.add("attack");
@@ -1090,16 +1017,15 @@ ${e.error && e.error.stack ? ("\n" + e.error.stack) : ""}`;
 
     const dx=t.x-Player.x, dy=t.y-Player.y;
     const dist=Math.hypot(dx,dy);
-    if (dist>58){ toast("사거리 밖", 700); return; }
+    if (dist>62){ toast("사거리 밖", 700); return; }
 
     dealDamage(t, Player.atk + Math.floor(rand(-2,4)));
   }
-
   function playerDash(){
     if (Input.pressed.has("dash")) return;
     Input.pressed.add("dash");
     if (Player.dashCd>0){ toast("대시 쿨타임", 650); return; }
-    Player.dashCd = 1.1;
+    Player.dashCd = 1.0;
     Player.dashTime = 0.12;
     toast("<b>대시</b>", 600);
   }
@@ -1109,15 +1035,12 @@ ${e.error && e.error.stack ? ("\n" + e.error.stack) : ""}`;
   ========================= */
   function clearWorld(){
     World.mobs.length=0;
-    World.drops.length=0;
     World.camX=0; World.camY=0;
     World.shake=0; World.shakeT=0;
     Player.x=0; Player.y=0;
     Player.vx=0; Player.vy=0;
-    Player.hp=Player.hpMax;
-    Player.mp=Player.mpMax;
-    Player.dashCd=0; Player.dashTime=0;
     Player.targetId=null;
+    Player.dashCd=0; Player.dashTime=0;
   }
 
   function startStage11(){
@@ -1125,7 +1048,6 @@ ${e.error && e.error.stack ? ("\n" + e.error.stack) : ""}`;
     Game.stageId="1-1";
     Game.stageTime=0;
     Game.timeLimit=300;
-    Game.wave=1;
     clearWorld();
     for (let i=0;i<6;i++){
       const kind = (Math.random()<0.18) ? "elite" : "slime";
@@ -1140,7 +1062,6 @@ ${e.error && e.error.stack ? ("\n" + e.error.stack) : ""}`;
     Game.stageId="BOSS";
     Game.stageTime=0;
     Game.timeLimit=240;
-    Game.wave=0;
     clearWorld();
     spawnMob("boss", 260, 0);
     toast("<b>보스전</b> 시작", 1200);
@@ -1149,7 +1070,6 @@ ${e.error && e.error.stack ? ("\n" + e.error.stack) : ""}`;
 
   function endRun(){
     if (Game.scene==="menu") return;
-    // 업적 감정권(간단)
     Game.appraisalTickets += 1;
     toast("스테이지 종료 - 감정권 <b>+1</b>", 1400);
 
@@ -1158,8 +1078,6 @@ ${e.error && e.error.stack ? ("\n" + e.error.stack) : ""}`;
     Game.stageTime=0;
     Game.timeLimit=0;
     World.mobs.length=0;
-    World.drops.length=0;
-
     updateInvUI();
   }
 
@@ -1168,7 +1086,6 @@ ${e.error && e.error.stack ? ("\n" + e.error.stack) : ""}`;
     Game.stageId=null;
     Game.stageTime=0;
     Game.timeLimit=0;
-    Game.wave=0;
     clearWorld();
     toast("<b>리셋</b> 완료", 900);
   }
@@ -1191,33 +1108,13 @@ ${e.error && e.error.stack ? ("\n" + e.error.stack) : ""}`;
 
   bindButton(btnAttack, ()=> { Input.attack=true; }, 80);
   bindButton(btnDash,   ()=> { Input.dash=true;   }, 120);
-  bindButton(btnPickup, ()=> { Input.pickup=true; }, 120);
+  bindButton(btnPickup, ()=> { Input.pickup=true; toast("줍기(데모)",700); }, 120);
 
-  bindButton(btnToggleTarget, ()=>{
-    Game.autoTarget = !Game.autoTarget;
-    toast(`오토 타겟: <b>${Game.autoTarget?"ON":"OFF"}</b>`, 900);
-  }, 140);
-
-  bindButton(btnToggleAtk, ()=>{
-    Game.autoAttack = !Game.autoAttack;
-    toast(`오토 공격: <b>${Game.autoAttack?"ON":"OFF"}</b>`, 900);
-  }, 140);
-
-  bindButton(btnToggleLoot, ()=>{
-    Game.autoLoot = !Game.autoLoot;
-    toast(`오토 줍기: <b>${Game.autoLoot?"ON":"OFF"}</b>`, 900);
-  }, 140);
-
-  bindButton(btnToggleMove, ()=>{
-    Game.autoMove = !Game.autoMove;
-    toast(`오토 이동: <b>${Game.autoMove?"ON":"OFF"}</b>`, 900);
-  }, 140);
-
-  bindButton(btnToggleLock, ()=>{
-    Game.lockOn = !Game.lockOn;
-    toast(`추적 잠금: <b>${Game.lockOn?"ON":"OFF"}</b>`, 900);
-    if (!Game.lockOn) Player.targetId = null;
-  }, 140);
+  bindButton(btnToggleTarget, ()=>{ Game.autoTarget=!Game.autoTarget; toast(`오토 타겟: <b>${Game.autoTarget?"ON":"OFF"}</b>`,900); }, 140);
+  bindButton(btnToggleAtk,    ()=>{ Game.autoAttack=!Game.autoAttack; toast(`오토 공격: <b>${Game.autoAttack?"ON":"OFF"}</b>`,900); }, 140);
+  bindButton(btnToggleLoot,   ()=>{ Game.autoLoot=!Game.autoLoot; toast(`오토 줍기: <b>${Game.autoLoot?"ON":"OFF"}</b>`,900); }, 140);
+  bindButton(btnToggleMove,   ()=>{ Game.autoMove=!Game.autoMove; toast(`오토 이동: <b>${Game.autoMove?"ON":"OFF"}</b>`,900); }, 140);
+  bindButton(btnToggleLock,   ()=>{ Game.lockOn=!Game.lockOn; toast(`추적 잠금: <b>${Game.lockOn?"ON":"OFF"}</b>`,900); if(!Game.lockOn) Player.targetId=null; }, 140);
 
   bindButton(btnReset, ()=> resetRun(), 260);
 
@@ -1225,7 +1122,6 @@ ${e.error && e.error.stack ? ("\n" + e.error.stack) : ""}`;
   bindButton(btnAppraise, ()=> appraiseSelected(), 220);
   bindButton(btnDrop, ()=> dropSelected(), 200);
 
-  // 모달 바깥 클릭 닫기
   addNoScroll(menuModal, "pointerdown", (e)=>{ if (e.target===menuModal) menuModal.classList.remove("show"); });
   addNoScroll(invModal,  "pointerdown", (e)=>{ if (e.target===invModal)  invModal.classList.remove("show");  });
 
@@ -1240,21 +1136,18 @@ ${e.error && e.error.stack ? ("\n" + e.error.stack) : ""}`;
   let hb = 0;
 
   function updateFixed(dt){
-    // 입력 합성
+    // 입력
     let mx=0, my=0;
     if (Input.keys.has("w") || Input.keys.has("arrowup")) my -= 1;
     if (Input.keys.has("s") || Input.keys.has("arrowdown")) my += 1;
     if (Input.keys.has("a") || Input.keys.has("arrowleft")) mx -= 1;
     if (Input.keys.has("d") || Input.keys.has("arrowright")) mx += 1;
 
-    // 조이스틱 우선
     if (Joy.active){ mx = Joy.x; my = Joy.y; }
 
-    // 정규화
     const len = Math.hypot(mx,my);
     if (len > 1e-6){ mx/=len; my/=len; }
 
-    // 씬 타이머
     if (Game.scene !== "menu"){
       Game.stageTime += dt;
       if (Game.timeLimit > 0 && Game.stageTime >= Game.timeLimit){
@@ -1263,15 +1156,12 @@ ${e.error && e.error.stack ? ("\n" + e.error.stack) : ""}`;
       }
     }
 
-    // 키로 액션
     if (Input.keys.has(" ")) Input.attack = true;
     if (Input.keys.has("shift")) Input.dash = true;
 
-    // 대시
     Player.dashTime = Math.max(0, Player.dashTime - dt);
     Player.dashCd   = Math.max(0, Player.dashCd - dt);
 
-    // 오토 이동(타겟 접근)
     if (Game.scene !== "menu" && Game.autoMove){
       let t = getNearestMob();
       if (Game.lockOn && Player.targetId){
@@ -1281,8 +1171,7 @@ ${e.error && e.error.stack ? ("\n" + e.error.stack) : ""}`;
       if (t){
         const dx=t.x-Player.x, dy=t.y-Player.y;
         const d=Math.hypot(dx,dy)||1;
-        if (d>70){ mx = dx/d; my = dy/d; }
-        else { mx=0; my=0; }
+        if (d>70){ mx = dx/d; my = dy/d; } else { mx=0; my=0; }
       }
     }
 
@@ -1316,34 +1205,28 @@ ${e.error && e.error.stack ? ("\n" + e.error.stack) : ""}`;
       m.y += m.vy*dt;
     }
 
-    // 오토 타겟
+    // 오토 타겟/공격
     if (Game.scene!=="menu" && Game.autoTarget){
       if (!Player.targetId || !getMobById(Player.targetId) || getMobById(Player.targetId).hp<=0){
         const t = getNearestMob();
         Player.targetId = t ? t.id : null;
       }
     }
-
-    // 오토 공격
     if (Game.scene!=="menu" && Game.autoAttack){
       const t = Game.lockOn && Player.targetId ? getMobById(Player.targetId) : getNearestMob();
       if (t){
         const dx=t.x-Player.x, dy=t.y-Player.y;
         const d=Math.hypot(dx,dy);
-        if (d<58 && Math.random()<0.22) playerAttack();
+        if (d<62 && Math.random()<0.22) playerAttack();
       }
     }
 
-    // 수동 액션 소비
     if (Input.attack){ Input.attack=false; playerAttack(); }
     if (Input.dash){   Input.dash=false;   playerDash(); }
-    if (Input.pickup){ Input.pickup=false; toast("줍기(데모)", 700); }
 
-    // 카메라
     World.camX = lerp(World.camX, Player.x, 0.12);
     World.camY = lerp(World.camY, Player.y, 0.12);
 
-    // 쉐이크 감쇠
     if (World.shakeT>0){
       World.shakeT -= dt;
       World.shake = Math.max(0, World.shake - dt*3.2);
@@ -1365,7 +1248,6 @@ ${e.error && e.error.stack ? ("\n" + e.error.stack) : ""}`;
     ctx.fillStyle = "rgba(0,0,0,0.22)";
     ctx.fillRect(0,0,View.vw,View.vh);
 
-    // 게임 영역 clip
     ctx.translate(ox,oy);
     ctx.beginPath();
     ctx.rect(0,0,W*s,H*s);
@@ -1373,78 +1255,46 @@ ${e.error && e.error.stack ? ("\n" + e.error.stack) : ""}`;
 
     ctx.fillStyle = "rgba(0,0,0,0.18)";
     ctx.fillRect(0,0,W*s,H*s);
-
     ctx.scale(s,s);
 
-    // 카메라 흔들림
+    // 카메라
     let shx=0, shy=0;
     if (World.shake>0.001){
       const t = nowMs()*0.001;
       shx = Math.cos(t*19.7)*6*World.shake;
       shy = Math.sin(t*17.1)*6*World.shake;
     }
-
     const camX = World.camX + shx;
     const camY = World.camY + shy;
     const cx = W/2 - camX;
     const cy = H/2 - camY;
 
-    // 그리드
+    // 몬스터/플레이어
     ctx.save();
     ctx.translate(cx,cy);
-    ctx.globalAlpha = 0.35;
-    ctx.strokeStyle = "rgba(255,255,255,0.10)";
-    ctx.lineWidth = 1;
-    const grid=60;
-    const minX = Math.floor((camX - W)/grid)*grid - grid*2;
-    const maxX = Math.floor((camX + W)/grid)*grid + grid*2;
-    const minY = Math.floor((camY - H)/grid)*grid - grid*2;
-    const maxY = Math.floor((camY + H)/grid)*grid + grid*2;
-    for (let x=minX; x<=maxX; x+=grid){
-      ctx.beginPath(); ctx.moveTo(x,minY); ctx.lineTo(x,maxY); ctx.stroke();
-    }
-    for (let y=minY; y<=maxY; y+=grid){
-      ctx.beginPath(); ctx.moveTo(minX,y); ctx.lineTo(maxX,y); ctx.stroke();
-    }
-    ctx.restore();
 
-    // 몬스터
-    ctx.save();
-    ctx.translate(cx,cy);
     for (const m of World.mobs){
       if (m.hp<=0) continue;
       const wob = Math.sin(m.phase)*2.2;
 
       ctx.save();
       ctx.translate(m.x, m.y+wob);
-
       ctx.fillStyle = (m.kind==="boss") ? "rgba(255,106,106,0.92)"
                   : (m.kind==="elite") ? "rgba(106,167,255,0.92)"
                   : "rgba(106,227,123,0.92)";
       ctx.beginPath();
       ctx.arc(0,0,m.r,0,Math.PI*2);
       ctx.fill();
-      ctx.strokeStyle = "rgba(0,0,0,0.35)";
-      ctx.lineWidth = 2;
-      ctx.stroke();
-
       ctx.restore();
     }
-    ctx.restore();
 
-    // 플레이어
-    ctx.save();
-    ctx.translate(cx,cy);
     ctx.save();
     ctx.translate(Player.x, Player.y);
-
     ctx.fillStyle = "rgba(255,255,255,0.92)";
     ctx.beginPath();
     ctx.arc(0,0,Player.r,0,Math.PI*2);
     ctx.fill();
-    ctx.strokeStyle = "rgba(0,0,0,0.35)";
-    ctx.lineWidth = 2;
-    ctx.stroke();
+    ctx.restore();
 
     // 타겟 링
     if (Player.targetId){
@@ -1453,15 +1303,14 @@ ${e.error && e.error.stack ? ("\n" + e.error.stack) : ""}`;
         ctx.strokeStyle = "rgba(106,167,255,0.85)";
         ctx.lineWidth = 2;
         ctx.beginPath();
-        ctx.arc(t.x-Player.x, t.y-Player.y, t.r+10, 0, Math.PI*2);
+        ctx.arc(t.x, t.y, t.r+10, 0, Math.PI*2);
         ctx.stroke();
       }
     }
 
     ctx.restore();
-    ctx.restore();
 
-    // 안내 텍스트(게임 영역 내부)
+    // 안내 텍스트
     ctx.save();
     ctx.fillStyle = "rgba(255,255,255,0.85)";
     ctx.font = "700 16px ui-sans-serif, system-ui";
@@ -1486,8 +1335,7 @@ ${e.error && e.error.stack ? ("\n" + e.error.stack) : ""}`;
       timerTxt.textContent = `제한: ${mm}:${ss}`;
     }
 
-    hbTxt.textContent = `HB: ${hb}`; // 루프가 진짜 도는지(먹통 검증)
-
+    hbTxt.textContent = `HB: ${hb}`;
     fpsChip.textContent = `FPS: ${fps}`;
     fpsChip.classList.toggle("warn", fps < 50);
     fpsChip.classList.toggle("good", fps >= 50);
@@ -1495,15 +1343,16 @@ ${e.error && e.error.stack ? ("\n" + e.error.stack) : ""}`;
     syncToggleButtons();
   }
 
+  let fpsAcc=0, fpsFrames=0, fps=60;
+  let hb = 0;
+
   function loop(){
     const t = nowMs();
     let dt = (t - lastT) / 1000;
     lastT = t;
 
-    // dt 폭주 방지
     dt = clamp(dt, 0, 0.05);
 
-    // fps 계산
     fpsAcc += dt; fpsFrames++;
     if (fpsAcc >= 0.4){
       fps = Math.round(fpsFrames / fpsAcc);
@@ -1516,34 +1365,35 @@ ${e.error && e.error.stack ? ("\n" + e.error.stack) : ""}`;
     while (acc >= FIXED_DT){
       updateFixed(FIXED_DT);
       acc -= FIXED_DT;
-      hb++; // fixed step 돌 때마다 증가
+      hb++;
     }
 
     draw();
     updateHUD();
     updateToasts();
-
     requestAnimationFrame(loop);
   }
 
-  // 탭 전환 복귀 시 타이밍 리셋
   document.addEventListener("visibilitychange", ()=>{
     lastT = nowMs();
     acc = 0;
   });
 
-  /* =========================
-     14) 초기 시드
-  ========================= */
+  // 인벤 초기
   Game.inv.push(makeUnidentifiedGear());
   Game.inv.push(makeUnidentifiedGear());
+  Game.appraisalTickets = 1;
   updateInvUI();
   renderInvDetail();
   applyEquipmentStats();
   syncToggleButtons();
 
-  toast("<b>안전모드</b>: 먹통/검정화면 방지 빌드", 1600);
-  toast("메뉴에서 <b>스테이지</b> 또는 <b>보스</b>를 눌러 시작", 1500);
+  // 모달 외부 클릭 닫기
+  addNoScroll(menuModal, "pointerdown", (e)=>{ if (e.target===menuModal) menuModal.classList.remove("show"); });
+  addNoScroll(invModal,  "pointerdown", (e)=>{ if (e.target===invModal)  invModal.classList.remove("show");  });
+
+  toast("<b>먹통 수정 v2</b>: stick 초기화 순서 문제 해결", 1600);
+  toast("메뉴/인벤/스테이지/보스 눌러서 테스트", 1500);
 
   loop();
 
