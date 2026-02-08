@@ -2,13 +2,14 @@
   "use strict";
 
   // ============================================================
-  // 보스게이트 (BOSS GATE) - Flash-like Side Action RPG (Canvas2D)
-  // ✅ 변경사항
-  // 1) 화면 흔들림(카메라 shake) 제거 → 화면 고정
-  // 2) 인게임 종료/일시정지 메뉴(PAUSE) 추가
-  // 3) 메뉴 로고: 플래쉬식 번쩍임/글로우/플리커 연출
+  // 보스게이트 (BOSS GATE) - Canvas2D 통합 최신본 (안 흔들림 고정)
   //
-  // 자산 파일(없으면 자동으로 도형 렌더링):
+  // ✅ 핵심 수정:
+  // - 게임 논리 해상도(Viewport)를 960x540으로 "완전 고정"
+  // - DPR(레티나)만 내부 버퍼에 반영
+  // - 카메라/렌더/UI/충돌 모두 960x540 기준 → X 스킬 사용해도 화면 흔들림 없음
+  //
+  // 자산(없으면 도형/대체 사운드):
   // /assets/bg.png
   // /assets/player_sheet.png
   // /assets/slime_sheet.png
@@ -16,17 +17,24 @@
   // /assets/bgm.mp3 /assets/sfx_hit.mp3 /assets/sfx_coin.mp3
   // ============================================================
 
-  // -------------------- DOM/Canvas --------------------
+  // -------------------- Canvas --------------------
   const canvas = document.getElementById("game");
   const ctx = canvas.getContext("2d", { alpha: false });
 
-  const DPR = () => Math.max(1, Math.min(2.5, window.devicePixelRatio || 1));
+  // ✅ 논리 좌표계 고정
+  const VIEW_W = 960;
+  const VIEW_H = 540;
+
+  // DPR만 반영해서 내부 버퍼 확장(논리좌표는 고정)
+  function getDpr() { return Math.max(1, Math.min(2.5, window.devicePixelRatio || 1)); }
+
   function resize() {
-    const rect = canvas.getBoundingClientRect();
-    const dpr = DPR();
-    canvas.width = Math.floor(rect.width * dpr);
-    canvas.height = Math.floor(rect.height * dpr);
+    const dpr = getDpr();
+    canvas.width = Math.floor(VIEW_W * dpr);
+    canvas.height = Math.floor(VIEW_H * dpr);
+    // 논리 좌표계는 960x540로 유지되도록 transform 설정
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.imageSmoothingEnabled = true;
   }
   window.addEventListener("resize", resize, { passive: true });
   resize();
@@ -41,9 +49,7 @@
 
   // -------------------- Save --------------------
   const SAVE_KEY = "boss_gate_web_v1";
-  function save(state) {
-    try { localStorage.setItem(SAVE_KEY, JSON.stringify(state)); } catch {}
-  }
+  function save(state) { try { localStorage.setItem(SAVE_KEY, JSON.stringify(state)); } catch {} }
   function load() {
     try {
       const raw = localStorage.getItem(SAVE_KEY);
@@ -53,13 +59,7 @@
   }
 
   // -------------------- Game States --------------------
-  const GS = {
-    MENU: "MENU",
-    OPTIONS: "OPTIONS",
-    PLAY: "PLAY",
-    PAUSE: "PAUSE",
-    INVENTORY: "INVENTORY",
-  };
+  const GS = { MENU:"MENU", OPTIONS:"OPTIONS", PLAY:"PLAY", PAUSE:"PAUSE", INVENTORY:"INVENTORY" };
 
   // -------------------- Audio --------------------
   class AudioMan {
@@ -105,12 +105,10 @@
     async unlock() {
       if (this.unlocked) return;
       this.ensureCtx();
-      try {
-        if (this.ctx && this.ctx.state !== "running") await this.ctx.resume();
-      } catch {}
+      try { if (this.ctx && this.ctx.state !== "running") await this.ctx.resume(); } catch {}
       this.unlocked = true;
 
-      // 작은 무음 재생으로 모바일 오디오 언락 보조
+      // 모바일 오디오 언락 보조
       if (this.ctx) {
         const o = this.ctx.createOscillator();
         const g = this.ctx.createGain();
@@ -138,10 +136,8 @@
       g.gain.setValueAtTime(0.0001, t0);
       g.gain.exponentialRampToValueAtTime(vol, t0 + 0.01);
       g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-      o.connect(g);
-      g.connect(this.sfxGain);
-      o.start(t0);
-      o.stop(t0 + dur + 0.02);
+      o.connect(g); g.connect(this.sfxGain);
+      o.start(t0); o.stop(t0 + dur + 0.02);
     }
 
     playHit() {
@@ -170,22 +166,21 @@
       bgm.volume = 0.5;
       bgm.loop = true;
       bgm.play().catch(() => {
-        // 파일이 없으면 간단한 톤 BGM으로 대체
         this.ensureCtx();
         if (!this.ctx) return;
         if (this._bgmNode) return;
+
         const t0 = this.ctx.currentTime;
         const o = this.ctx.createOscillator();
         const g = this.ctx.createGain();
         o.type = "sine";
         g.gain.value = 0.0001;
-        o.connect(g);
-        g.connect(this.bgmGain);
+        o.connect(g); g.connect(this.bgmGain);
 
         const notes = [220, 277.18, 329.63, 392.0, 329.63, 277.18];
-        for (let i = 0; i < 999; i++) {
+        for (let i=0;i<999;i++){
           const f = notes[i % notes.length] * (i % 12 === 0 ? 0.5 : 1);
-          o.frequency.setValueAtTime(f, t0 + i * 0.22);
+          o.frequency.setValueAtTime(f, t0 + i*0.22);
         }
         g.gain.exponentialRampToValueAtTime(0.12, t0 + 0.12);
         o.start(t0);
@@ -195,8 +190,7 @@
 
     stopBgm() {
       const bgm = this.files.bgm;
-      bgm.pause();
-      bgm.currentTime = 0;
+      bgm.pause(); bgm.currentTime = 0;
       if (this._bgmNode && this.ctx) {
         try { this._bgmNode.o.stop(); } catch {}
         this._bgmNode = null;
@@ -220,23 +214,28 @@
 
   window.addEventListener("keydown", (e) => {
     const k = e.key.toLowerCase();
-    if (["arrowleft","arrowright","arrowup"," ","z","x","escape","i","p"].includes(k)) e.preventDefault();
+
+    // ✅ 키 입력 시 페이지 스크롤/포커스 이동 방지(특히 Space/Arrow)
+    if (["arrowleft","arrowright","arrowup"," ","z","x","escape","i","p"].includes(k)) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
 
     keys.add(k);
 
     if (k === " " || k === "arrowup") pressed.jump = true;
     if (k === "z") pressed.atk = true;
-    if (k === "x") pressed.skill = true;
-
-    // ✅ 인게임 메뉴/일시정지
-    if (k === "escape" || k === "p") pressed.menu = true;
-
-    // ✅ 인벤토리 토글(I)
-    if (k === "i") pressed.inv = true;
+    if (k === "x") pressed.skill = true;       // ✅ X 스킬
+    if (k === "escape" || k === "p") pressed.menu = true; // ✅ 메뉴
+    if (k === "i") pressed.inv = true;          // ✅ 인벤
   }, { passive:false });
 
-  window.addEventListener("keyup", (e) => keys.delete(e.key.toLowerCase()));
+  window.addEventListener("keyup", (e) => {
+    const k = e.key.toLowerCase();
+    keys.delete(k);
+  }, { passive:true });
 
+  // 모바일 터치 버튼
   const touch = document.getElementById("touch");
   const touchDown = new Set();
   function setTouchKey(name, down) {
@@ -255,7 +254,7 @@
       if (k === "jump") pressed.jump = true;
       if (k === "atk") pressed.atk = true;
       if (k === "skill") pressed.skill = true;
-      if (k === "menu") pressed.menu = true; // ✅ 모바일 MENU는 일시정지 메뉴
+      if (k === "menu") pressed.menu = true;
     }, { passive:false });
 
     touch.addEventListener("pointerup", (e) => {
@@ -279,7 +278,32 @@
     return clamp(x, -1, 1);
   }
 
-  // -------------------- Assets (optional PNG) --------------------
+  // -------------------- Pointer (logical coords) --------------------
+  // ✅ 화면 크기가 바뀌어도 입력 좌표는 960x540으로 안정적으로 변환
+  let pointer = { x:0, y:0, down:false, clicked:false };
+  function toLogicalXY(clientX, clientY) {
+    const rect = canvas.getBoundingClientRect();
+    const lx = (clientX - rect.left) / rect.width * VIEW_W;
+    const ly = (clientY - rect.top) / rect.height * VIEW_H;
+    return { x: lx, y: ly };
+  }
+  canvas.addEventListener("pointerdown", (e) => {
+    const p = toLogicalXY(e.clientX, e.clientY);
+    pointer.x = p.x; pointer.y = p.y;
+    pointer.down = true;
+    pointer.clicked = true;
+  }, { passive:true });
+  canvas.addEventListener("pointerup", () => { pointer.down = false; }, { passive:true });
+  canvas.addEventListener("pointermove", (e) => {
+    const p = toLogicalXY(e.clientX, e.clientY);
+    pointer.x = p.x; pointer.y = p.y;
+  }, { passive:true });
+
+  function hitBtn(x,y,w,h){
+    return pointer.clicked && pointer.x>=x && pointer.x<=x+w && pointer.y>=y && pointer.y<=y+h;
+  }
+
+  // -------------------- Assets --------------------
   function loadImage(src) {
     const img = new Image();
     const obj = { img, ok: false };
@@ -288,12 +312,11 @@
     img.src = src;
     return obj;
   }
-
   const IMG = {
     player: loadImage("./assets/player_sheet.png"),
-    slime: loadImage("./assets/slime_sheet.png"),
-    fxHit: loadImage("./assets/fx_hit.png"),
-    bg: loadImage("./assets/bg.png"),
+    slime:  loadImage("./assets/slime_sheet.png"),
+    fxHit:  loadImage("./assets/fx_hit.png"),
+    bg:     loadImage("./assets/bg.png"),
   };
 
   // -------------------- SpriteSheet --------------------
@@ -320,9 +343,10 @@
       if (flip) ctx.scale(-1, 1);
 
       if (ok) {
-        ctx.drawImage(img, sx, sy, this.fw, this.fh, -this.fw*scale/2, -this.fh*scale/2, this.fw*scale, this.fh*scale);
+        ctx.drawImage(img, sx, sy, this.fw, this.fh,
+          -this.fw*scale/2, -this.fh*scale/2, this.fw*scale, this.fh*scale);
       } else {
-        // 이미지가 없으면 도형 대체
+        // fallback
         ctx.fillStyle = "rgba(91,140,255,0.95)";
         if (name === "hurt") ctx.fillStyle = "rgba(255,91,110,0.95)";
         if (name === "attack") ctx.fillStyle = "rgba(255,207,91,0.95)";
@@ -461,10 +485,10 @@
   // -------------------- Items --------------------
   const SLOTS = ["weapon","armor","ring"];
   const RAR = [
-    {k:"N", name:"일반", w:60, opt:0, mult:1.00},
-    {k:"R", name:"희귀", w:28, opt:1, mult:1.20},
-    {k:"SR",name:"영웅", w:10, opt:2, mult:1.45},
-    {k:"SSR",name:"전설",w: 2, opt:2, mult:1.85},
+    {k:"N",  name:"일반", w:60, opt:0, mult:1.00},
+    {k:"R",  name:"희귀", w:28, opt:1, mult:1.20},
+    {k:"SR", name:"영웅", w:10, opt:2, mult:1.45},
+    {k:"SSR",name:"전설", w: 2, opt:2, mult:1.85},
   ];
   const NAMES = {
     weapon:["나무 검","철검","흑철검","번개의 검","처형자 대검"],
@@ -694,29 +718,10 @@
     }
   }
 
-  class Coin {
-    constructor(x,y,amount){
-      this.x=x; this.y=y;
-      this.vx=rand(-40,40);
-      this.vy=rand(-280,-120);
-      this.r=8;
-      this.amount=amount;
-      this.t=0;
-    }
-  }
-  class Loot {
-    constructor(x,y,item){
-      this.x=x; this.y=y;
-      this.vx=rand(-30,30);
-      this.vy=rand(-240,-120);
-      this.r=10;
-      this.item=item;
-      this.t=0;
-    }
-  }
+  class Coin { constructor(x,y,amount){ this.x=x; this.y=y; this.vx=rand(-40,40); this.vy=rand(-280,-120); this.r=8; this.amount=amount; this.t=0; } }
+  class Loot { constructor(x,y,item){ this.x=x; this.y=y; this.vx=rand(-30,30); this.vy=rand(-240,-120); this.r=10; this.item=item; this.t=0; } }
 
-  // -------------------- Camera --------------------
-  // ✅ 화면 흔들림 제거: cam.shake 사용하지 않음
+  // -------------------- Camera (shake 없음) --------------------
   const cam = { x:0, y:0 };
 
   // -------------------- UI helpers --------------------
@@ -760,37 +765,16 @@
     ctx.restore();
   }
 
-  // Click detection
-  let pointer = { x:0, y:0, down:false, clicked:false };
-  canvas.addEventListener("pointerdown", (e) => {
-    const rect = canvas.getBoundingClientRect();
-    pointer.x = (e.clientX - rect.left);
-    pointer.y = (e.clientY - rect.top);
-    pointer.down = true;
-    pointer.clicked = true;
-  }, { passive:true });
-  canvas.addEventListener("pointerup", () => { pointer.down=false; }, { passive:true });
-  canvas.addEventListener("pointermove", (e) => {
-    const rect = canvas.getBoundingClientRect();
-    pointer.x = (e.clientX - rect.left);
-    pointer.y = (e.clientY - rect.top);
-  }, { passive:true });
-
-  function hitBtn(x,y,w,h){
-    return pointer.clicked && pointer.x>=x && pointer.x<=x+w && pointer.y>=y && pointer.y<=y+h;
-  }
-
   // -------------------- State --------------------
   function freshState(){
     const p = new Player();
     return {
-      ver: 1,
+      ver: 2,
       game: "보스게이트 (BOSS GATE)",
       createdAt: isoNow(),
       updatedAt: isoNow(),
 
       gs: GS.MENU,
-
       opt: { muted:false, bgm:true, sfx:true },
 
       player: p,
@@ -813,9 +797,16 @@
       msg: "보스문을 부숴라. (ESC/P: 메뉴, I: 인벤)",
       msgT: 2.2,
 
-      // 로고 애니 시간
       t: 0,
     };
+  }
+
+  function applyOptions(state){
+    audio.setMuted(!!state.opt.muted);
+    audio.bgmOn = !!state.opt.bgm;
+    audio.sfxOn = !!state.opt.sfx;
+    if (!audio.bgmOn) audio.stopBgm();
+    else audio.startBgm();
   }
 
   function rebuildStage(state){
@@ -854,12 +845,13 @@
     }
   }
 
-  function applyOptions(state){
-    audio.setMuted(!!state.opt.muted);
-    audio.bgmOn = !!state.opt.bgm;
-    audio.sfxOn = !!state.opt.sfx;
-    if (!audio.bgmOn) audio.stopBgm();
-    else audio.startBgm();
+  function startNew(state){
+    const fresh = freshState();
+    fresh.opt = state.opt;
+    Object.assign(state, fresh);
+    rebuildStage(state);
+    state.gs = GS.PLAY;
+    save(state);
   }
 
   // -------------------- Combat helpers --------------------
@@ -931,16 +923,6 @@
     ent.y = clamp(ent.y, 40, WORLD.h - 40);
   }
 
-  // -------------------- Start/New --------------------
-  function startNew(state){
-    const fresh = freshState();
-    fresh.opt = state.opt;
-    Object.assign(state, fresh);
-    rebuildStage(state);
-    state.gs = GS.PLAY;
-    save(state);
-  }
-
   // -------------------- Gameplay --------------------
   function updatePlay(state, dt){
     const p = state.player;
@@ -971,7 +953,7 @@
     p.animT += dt;
     if (p.anim !== state._prevAnimP) { p.animT = 0; state._prevAnimP = p.anim; }
 
-    // 공격
+    // 공격(Z)
     if (pressed.atk && p.atkCd <= 0) {
       p.atkCd = 0.30;
       p.anim = "attack"; p.animT = 0;
@@ -1008,7 +990,7 @@
     }
     pressed.atk = false;
 
-    // 스킬
+    // 스킬(X) — 화면 흔들림 없음(논리 해상도 고정이라 카메라 기준 불변)
     if (pressed.skill && p.skillCd <= 0) {
       p.skillCd = 2.8;
       p.atkCd = 0.42;
@@ -1026,7 +1008,10 @@
           e.hitCd = 0.16;
 
           spawnHitFX(state, e.x, e.y - 14);
-          state.dmgText.push(new DamageText(e.x, e.y - 64, `${crit ? "✦" : ""}${dmg}`, "rgba(255,207,91,0.95)"));
+          state.dmgText.push(new DamageText(
+            e.x, e.y - 64, `${crit ? "✦" : ""}${dmg}`,
+            "rgba(255,207,91,0.95)"
+          ));
 
           if (e.hp <= 0) {
             e.dead = true;
@@ -1060,7 +1045,7 @@
       e.vy += 1100 * dt;
       collidePlatforms(e, state.platforms);
 
-      // 충돌 공격
+      // 충돌 데미지
       if (p.inv <= 0 && aabb(p.x - p.w/2, p.y - p.h/2, p.w, p.h, e.x - e.w/2, e.y - e.h/2, e.w, e.h)) {
         const { dmg } = damageCalc(e.atk, d.def, 0, 1);
         p.hp = clamp(p.hp - dmg, 0, d.hpMax);
@@ -1155,44 +1140,32 @@
 
     if (state.msgT > 0) state.msgT -= dt;
 
-    // ✅ 카메라: 흔들림 없이 고정 추적
-    const viewW = canvas.getBoundingClientRect().width;
-    const viewH = canvas.getBoundingClientRect().height;
-    cam.x = clamp(p.x - viewW*0.45, 0, WORLD.w - viewW);
-    cam.y = clamp(p.y - viewH*0.60, 0, WORLD.h - viewH);
+    // ✅ 카메라: VIEW_W / VIEW_H 고정 기준으로만 계산 (절대 흔들림 없음)
+    cam.x = clamp(p.x - VIEW_W*0.45, 0, WORLD.w - VIEW_W);
+    cam.y = clamp(p.y - VIEW_H*0.60, 0, WORLD.h - VIEW_H);
 
-    // ✅ 인게임 메뉴/인벤 토글
-    if (pressed.menu) {
-      pressed.menu = false;
-      state.gs = GS.PAUSE;
-      save(state);
-      return;
-    }
-    if (pressed.inv) {
-      pressed.inv = false;
-      state.gs = GS.INVENTORY;
-      save(state);
-      return;
-    }
+    // ✅ 인게임 메뉴/인벤
+    if (pressed.menu) { pressed.menu = false; state.gs = GS.PAUSE; save(state); return; }
+    if (pressed.inv)  { pressed.inv  = false; state.gs = GS.INVENTORY; save(state); return; }
   }
 
   // -------------------- Render helpers --------------------
-  function drawBackground(state, viewW, viewH){
+  function drawBackground(){
     if (IMG.bg.ok) {
       const img = IMG.bg.img;
       const par = 0.35;
       const bx = - (cam.x * par) % img.width;
-      for (let x = bx - img.width; x < viewW + img.width; x += img.width) {
-        ctx.drawImage(img, x, 0, img.width, Math.min(viewH, img.height));
+      for (let x = bx - img.width; x < VIEW_W + img.width; x += img.width) {
+        ctx.drawImage(img, x, 0, img.width, Math.min(VIEW_H, img.height));
       }
       ctx.fillStyle = "rgba(0,0,0,0.25)";
-      ctx.fillRect(0,0,viewW,viewH);
+      ctx.fillRect(0,0,VIEW_W,VIEW_H);
     } else {
-      const g = ctx.createLinearGradient(0,0,0,viewH);
+      const g = ctx.createLinearGradient(0,0,0,VIEW_H);
       g.addColorStop(0, "#061021");
       g.addColorStop(1, "#070a14");
       ctx.fillStyle = g;
-      ctx.fillRect(0,0,viewW,viewH);
+      ctx.fillRect(0,0,VIEW_W,VIEW_H);
     }
   }
 
@@ -1241,15 +1214,15 @@
     }
   }
 
-  function drawHud(state, viewW){
+  function drawHud(state){
     const p = state.player;
     const d = p.derived();
 
     ctx.globalAlpha = 0.90;
     ctx.fillStyle = "rgba(10,14,24,0.70)";
-    roundRect(14, 14, Math.min(740, viewW-28), 78, 14, true, false);
+    roundRect(14, 14, 740, 78, 14, true, false);
     ctx.strokeStyle = "rgba(255,255,255,0.12)";
-    roundRect(14, 14, Math.min(740, viewW-28), 78, 14, false, true);
+    roundRect(14, 14, 740, 78, 14, false, true);
     ctx.globalAlpha = 1;
 
     const hpPct = clamp(p.hp / d.hpMax, 0, 1);
@@ -1273,7 +1246,7 @@
     if (state.msgT > 0 && state.msg) {
       ctx.globalAlpha = clamp(state.msgT/0.5, 0, 1);
       ctx.fillStyle = "rgba(0,0,0,0.35)";
-      roundRect(14, 100, Math.min(640, viewW-28), 36, 12, true, false);
+      roundRect(14, 100, 640, 36, 12, true, false);
       ctx.fillStyle = "rgba(235,240,255,0.92)";
       ctx.font = "bold 14px system-ui, -apple-system, Segoe UI";
       ctx.fillText(state.msg, 28, 124);
@@ -1281,13 +1254,12 @@
     }
   }
 
-  // ✅ 로고 연출 (플래쉬식 번쩍임/글로우/플리커)
+  // ✅ 로고 연출
   function drawBossGateLogo(cx, cy, t){
     const flick = 0.6 + 0.4*Math.sin(t*2.6) + (Math.sin(t*17.0)*0.08);
     const glow = 12 + 10*(0.5+0.5*Math.sin(t*3.2));
     const shine = 0.35 + 0.65*(0.5+0.5*Math.sin(t*1.25));
 
-    // 상단 작은 텍스트
     ctx.save();
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
@@ -1295,23 +1267,18 @@
     ctx.font = "900 46px system-ui, -apple-system, Segoe UI";
     ctx.shadowColor = `rgba(91,140,255,${0.55*flick})`;
     ctx.shadowBlur = glow;
-    ctx.fillStyle = `rgba(235,240,255,${0.92})`;
+    ctx.fillStyle = `rgba(235,240,255,0.92)`;
     ctx.fillText("보스게이트", cx, cy-10);
 
-    // 영문 라벨
     ctx.font = "800 16px ui-monospace, Menlo, Consolas";
     ctx.shadowColor = `rgba(255,235,120,${0.35*shine})`;
     ctx.shadowBlur = 10;
-    ctx.fillStyle = `rgba(255,235,120,${0.85})`;
+    ctx.fillStyle = `rgba(255,235,120,0.85)`;
     ctx.fillText("BOSS GATE", cx, cy+26);
 
-    // 플래쉬 번쩍 라인(로고 스윕)
-    const w = 520;
-    const h = 64;
-    const x0 = cx - w/2;
-    const y0 = cy - 42;
+    const w = 520, h = 64;
+    const x0 = cx - w/2, y0 = cy - 42;
     const sweepX = x0 + (t*220 % (w+160)) - 80;
-
     const grad = ctx.createLinearGradient(sweepX, 0, sweepX+120, 0);
     grad.addColorStop(0, "rgba(255,255,255,0)");
     grad.addColorStop(0.5, `rgba(255,255,255,${0.25*shine})`);
@@ -1324,22 +1291,20 @@
     ctx.restore();
   }
 
-  function drawMenu(state, viewW, viewH){
-    drawBackground(state, viewW, viewH);
+  function drawMenu(state){
+    drawBackground();
 
-    const px = viewW*0.5-260, py = viewH*0.5-190;
+    const px = VIEW_W*0.5-260, py = VIEW_H*0.5-190;
     panel(px, py, 520, 380, " ");
-
-    // ✅ 로고 연출 표시
-    drawBossGateLogo(viewW*0.5, viewH*0.5-110, state.t);
+    drawBossGateLogo(VIEW_W*0.5, VIEW_H*0.5-110, state.t);
 
     ctx.fillStyle = "rgba(235,240,255,0.75)";
     ctx.font = "14px system-ui, -apple-system, Segoe UI";
     ctx.textAlign = "center";
-    ctx.fillText("스테이지를 뚫고, 보스문을 부숴라.", viewW*0.5, viewH*0.5-62);
+    ctx.fillText("스테이지를 뚫고, 보스문을 부숴라.", VIEW_W*0.5, VIEW_H*0.5-62);
     ctx.textAlign = "left";
 
-    const bx = viewW*0.5-180, by = viewH*0.5-30, bw=360, bh=52;
+    const bx = VIEW_W*0.5-180, by = VIEW_H*0.5-30, bw=360, bh=52;
     const hasSave = !!load();
 
     btn(bx, by, bw, bh, "새 게임 시작", true);
@@ -1369,14 +1334,14 @@
 
     ctx.fillStyle = "rgba(235,240,255,0.55)";
     ctx.font = "12px ui-monospace, Menlo, Consolas";
-    ctx.fillText("모바일: 버튼 조작 / PC: 방향키 + Z/X + Space + ESC/P 메뉴 + I 인벤", viewW*0.5-220, viewH*0.5+210);
+    ctx.fillText("모바일: 버튼 조작 / PC: 방향키 + Z/X + Space + ESC/P 메뉴 + I 인벤", VIEW_W*0.5-220, VIEW_H*0.5+210);
   }
 
-  function drawOptions(state, viewW, viewH){
-    drawBackground(state, viewW, viewH);
-    panel(viewW*0.5-260, viewH*0.5-170, 520, 340, "옵션");
+  function drawOptions(state){
+    drawBackground();
+    panel(VIEW_W*0.5-260, VIEW_H*0.5-170, 520, 340, "옵션");
 
-    const bx = viewW*0.5-200, by = viewH*0.5-90, bw=400, bh=52;
+    const bx = VIEW_W*0.5-200, by = VIEW_H*0.5-90, bw=400, bh=52;
 
     btn(bx, by, bw, bh, `음소거: ${state.opt.muted ? "ON" : "OFF"}`, !state.opt.muted);
     btn(bx, by+64, bw, bh, `BGM: ${state.opt.bgm ? "ON" : "OFF"}`, state.opt.bgm);
@@ -1390,11 +1355,11 @@
 
     ctx.fillStyle = "rgba(235,240,255,0.65)";
     ctx.font = "13px system-ui, -apple-system, Segoe UI";
-    ctx.fillText("오디오가 안 나면 화면을 한 번 탭/클릭해서 언락해줘.", viewW*0.5-200, viewH*0.5+70);
+    ctx.fillText("오디오가 안 나면 화면을 한 번 탭/클릭해서 언락해줘.", VIEW_W*0.5-200, VIEW_H*0.5+70);
   }
 
-  function drawScene(state, viewW, viewH, dim=false){
-    drawBackground(state, viewW, viewH);
+  function drawScene(state, dim=false){
+    drawBackground();
 
     drawPlatforms(state.platforms);
     if (state.door) drawDoor(state.door);
@@ -1430,19 +1395,18 @@
 
     if (dim) {
       ctx.fillStyle = "rgba(0,0,0,0.35)";
-      ctx.fillRect(0,0,viewW,viewH);
+      ctx.fillRect(0,0,VIEW_W,VIEW_H);
     }
 
-    drawHud(state, viewW);
+    drawHud(state);
   }
 
-  function drawPause(state, viewW, viewH){
-    // 게임 화면 위에 메뉴 오버레이
-    drawScene(state, viewW, viewH, true);
+  function drawPause(state){
+    drawScene(state, true);
 
-    panel(viewW*0.5-260, viewH*0.5-190, 520, 380, "일시정지 / 메뉴 (BOSS GATE)");
+    panel(VIEW_W*0.5-260, VIEW_H*0.5-190, 520, 380, "일시정지 / 메뉴 (BOSS GATE)");
 
-    const bx = viewW*0.5-180, by = viewH*0.5-120, bw=360, bh=52;
+    const bx = VIEW_W*0.5-180, by = VIEW_H*0.5-120, bw=360, bh=52;
 
     btn(bx, by, bw, bh, "재개", true);
     btn(bx, by+64, bw, bh, "인벤토리", true);
@@ -1450,8 +1414,7 @@
     btn(bx, by+192, bw, bh, "저장 후 타이틀로", false);
     btn(bx, by+256, bw, bh, "저장 삭제", false);
 
-    // 아래에 “종료” 버튼(새로고침)
-    const ex = viewW*0.5-180, ey = viewH*0.5+200, ew=360, eh=44;
+    const ex = VIEW_W*0.5-180, ey = VIEW_H*0.5+200, ew=360, eh=44;
     btn(ex, ey, ew, eh, "종료(페이지 새로고침)", false);
 
     if (hitBtn(bx,by,bw,bh)) state.gs = GS.PLAY;
@@ -1471,31 +1434,24 @@
       state.msgT = 1.5;
     }
 
-    if (hitBtn(ex,ey,ew,eh)) {
-      // 브라우저 종료는 불가 → 새로고침으로 사실상 종료 제공
-      location.reload();
-    }
+    if (hitBtn(ex,ey,ew,eh)) location.reload();
 
-    // ESC/P로 재개
-    if (pressed.menu) {
-      pressed.menu = false;
-      state.gs = GS.PLAY;
-    }
+    if (pressed.menu) { pressed.menu = false; state.gs = GS.PLAY; }
   }
 
-  function drawInventory(state, viewW, viewH){
-    drawScene(state, viewW, viewH, true);
+  function drawInventory(state){
+    drawScene(state, true);
 
-    panel(viewW*0.5-370, viewH*0.5-230, 740, 460, "보스게이트 인벤토리 / 장비(미감정→감정)");
+    panel(VIEW_W*0.5-370, VIEW_H*0.5-230, 740, 460, "보스게이트 인벤토리 / 장비(미감정→감정)");
 
     const p = state.player;
     const d = p.derived();
 
     ctx.fillStyle = "rgba(235,240,255,0.75)";
     ctx.font = "13px ui-monospace, Menlo, Consolas";
-    ctx.fillText(`BOSS GATE | STAGE ${stageLabel(state.stageIndex)} | GOLD ${p.gold}G | HP ${p.hp}/${d.hpMax}`, viewW*0.5-340, viewH*0.5-188);
+    ctx.fillText(`BOSS GATE | STAGE ${stageLabel(state.stageIndex)} | GOLD ${p.gold}G | HP ${p.hp}/${d.hpMax}`, VIEW_W*0.5-340, VIEW_H*0.5-188);
 
-    const ex = viewW*0.5-340, ey=viewH*0.5-162;
+    const ex = VIEW_W*0.5-340, ey=VIEW_H*0.5-162;
     ctx.fillStyle = "rgba(255,255,255,0.08)";
     roundRect(ex, ey, 320, 150, 12, true, false);
     ctx.strokeStyle = "rgba(255,255,255,0.12)";
@@ -1521,7 +1477,7 @@
     ctx.font = "12px ui-monospace, Menlo, Consolas";
     ctx.fillText(`ATK ${d.atk} DEF ${d.def} CRIT ${d.crit}% SPD ${d.spd} LS ${d.ls}%`, ex+14, ey+140);
 
-    const ix = viewW*0.5-8, iy=viewH*0.5-162;
+    const ix = VIEW_W*0.5-8, iy=VIEW_H*0.5-162;
     ctx.fillStyle = "rgba(255,255,255,0.08)";
     roundRect(ix, iy, 348, 330, 12, true, false);
     ctx.strokeStyle = "rgba(255,255,255,0.12)";
@@ -1544,7 +1500,7 @@
       y += 22;
     }
 
-    const bx = viewW*0.5-340, by=viewH*0.5+8, bw=160, bh=44;
+    const bx = VIEW_W*0.5-340, by=VIEW_H*0.5+8, bw=160, bh=44;
     btn(bx, by, bw, bh, "자동 장착", true);
     btn(bx+180, by, bw, bh, "감정(미감정)", true);
     btn(bx+360, by, bw, bh, "뽑기(골드)", false);
@@ -1589,23 +1545,8 @@
 
     if (hitBtn(bx+540,by,bw,bh)) state.gs = GS.PLAY;
 
-    if (pressed.inv) { pressed.inv=false; state.gs = GS.PLAY; }
+    if (pressed.inv)  { pressed.inv=false; state.gs = GS.PLAY; }
     if (pressed.menu) { pressed.menu=false; state.gs = GS.PAUSE; }
-  }
-
-  function render(state){
-    const viewW = canvas.getBoundingClientRect().width;
-    const viewH = canvas.getBoundingClientRect().height;
-
-    ctx.clearRect(0,0,viewW,viewH);
-
-    if (state.gs === GS.MENU) drawMenu(state, viewW, viewH);
-    else if (state.gs === GS.OPTIONS) drawOptions(state, viewW, viewH);
-    else if (state.gs === GS.PAUSE) drawPause(state, viewW, viewH);
-    else if (state.gs === GS.INVENTORY) drawInventory(state, viewW, viewH);
-    else drawScene(state, viewW, viewH);
-
-    pointer.clicked = false;
   }
 
   // -------------------- Revive --------------------
@@ -1618,6 +1559,7 @@
     Object.assign(st.player, raw.player || {});
     st.player.invItems ??= [];
     st.player.equip ??= { weapon:null, armor:null, ring:null };
+
     st.stageIndex = raw.stageIndex ?? st.stageIndex;
     st.inBossRoom = raw.inBossRoom ?? st.inBossRoom;
 
@@ -1636,9 +1578,7 @@
     st.msg = raw.msg ?? st.msg;
     st.msgT = raw.msgT ?? 0;
 
-    st.game = "보스게이트 (BOSS GATE)";
     st.t = 0;
-
     return st;
   }
 
@@ -1659,7 +1599,16 @@
     state.updatedAt = isoNow();
     if (Math.random() < 0.03) save(state);
 
-    render(state);
+    // render
+    ctx.clearRect(0,0,VIEW_W,VIEW_H);
+
+    if (state.gs === GS.MENU) drawMenu(state);
+    else if (state.gs === GS.OPTIONS) drawOptions(state);
+    else if (state.gs === GS.PAUSE) drawPause(state);
+    else if (state.gs === GS.INVENTORY) drawInventory(state);
+    else drawScene(state);
+
+    pointer.clicked = false;
     requestAnimationFrame(loop);
   }
   requestAnimationFrame(loop);
