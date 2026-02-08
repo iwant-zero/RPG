@@ -2,2274 +2,1001 @@
 <html lang="ko">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
-  <title>보스게이트 (BOSS GATE)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
+  <title>보스게이트 - v4.5 (자동 확장자 탐색 + 이미지 우선)</title>
   <style>
-    :root { color-scheme: dark; }
-    html, body {
-      margin: 0;
-      height: 100%;
-      background: #050812;
-      overflow: hidden;
-      touch-action: none;
-      -webkit-user-select: none;
-      user-select: none;
-      font-family: system-ui, -apple-system, Segoe UI, Roboto, Apple SD Gothic Neo, Noto Sans KR, sans-serif;
+    :root{
+      --bg:#070a12;
+      --panel: rgba(12,18,38,0.88);
+      --line: rgba(255,255,255,0.12);
+      --text: rgba(255,255,255,0.92);
+      --muted: rgba(255,255,255,0.65);
+      --good:#6ae37b;
+      --warn:#ffd36a;
+      --bad:#ff6a6a;
+      --btn1:#243a77;
+      --btn2:#1b2a55;
+      --shadow: 0 10px 30px rgba(0,0,0,0.35);
+      --r:18px;
+      --font: ui-sans-serif, system-ui, -apple-system, "Apple SD Gothic Neo", "Noto Sans KR", Segoe UI, Roboto, Arial, sans-serif;
     }
-    #wrap { height: 100%; display: grid; place-items: center; }
-    #stage {
-      position: relative;
-      width: min(100vw, calc(100vh * 16 / 9));
-      height: min(100vh, calc(100vw * 9 / 16));
-      max-width: 960px;
-      max-height: 540px;
-      background: #050812;
-      border-radius: 14px;
-      box-shadow: 0 10px 40px rgba(0,0,0,.45);
-      overflow: hidden;
-    }
-    canvas#game { width: 100%; height: 100%; display: block; background: #050812; }
 
-    #touch { position: absolute; inset: 0; pointer-events: none; }
-    .btn {
-      pointer-events: auto;
-      position: absolute;
-      width: 62px; height: 62px;
-      border-radius: 16px;
-      display: grid; place-items: center;
-      background: rgba(255,255,255,0.08);
-      border: 1px solid rgba(255,255,255,0.14);
-      color: rgba(235,240,255,0.92);
-      font-weight: 900; font-size: 18px;
+    html, body{
+      margin:0; padding:0;
+      width:100%; height:100%;
+      overflow:hidden;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font);
       -webkit-tap-highlight-color: transparent;
-      user-select: none;
-      touch-action: none;
+      user-select:none;
     }
-    .btn:active {
-      transform: translateY(1px);
-      background: rgba(91,140,255,0.20);
-      border-color: rgba(91,140,255,0.55);
-    }
-    #b-left { left: 16px; bottom: 22px; }
-    #b-right { left: 92px; bottom: 22px; }
 
-    #b-jump { right: 16px; bottom: 96px; width: 70px; height: 70px; border-radius: 18px; font-size: 18px; }
-    #b-atk { right: 96px; bottom: 22px; }
-    #b-skill { right: 16px; bottom: 22px; }
-    #b-potion { right: 96px; bottom: 96px; width: 70px; height: 70px; border-radius: 18px; font-size: 18px; }
-    #b-menu { right: 16px; top: 16px; width: 54px; height: 54px; border-radius: 14px; font-size: 18px; }
+    #app{
+      position:fixed; inset:0;
+      width:100vw; height:100vh;
+      background: radial-gradient(1200px 900px at 30% 20%, #121b3a 0%, #070a12 55%, #050610 100%);
+      overflow:hidden;
+      touch-action:none;
+    }
+
+    #cv{
+      position:absolute; inset:0;
+      width:100%; height:100%;
+      display:block;
+      background: transparent;
+      pointer-events:none;
+    }
+
+    #hud{
+      position:absolute; inset:0;
+      pointer-events:auto;
+      padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    }
+
+    .panel{
+      background: var(--panel);
+      border:1px solid var(--line);
+      border-radius: var(--r);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(10px);
+    }
+
+    .topbar{
+      position:absolute;
+      left:12px; right:12px; top:12px;
+      display:flex;
+      gap:10px;
+      align-items:stretch;
+      justify-content:space-between;
+      z-index: 10;
+      pointer-events:auto;
+    }
+
+    .status{
+      padding:10px 12px;
+      display:flex;
+      flex-direction:column;
+      gap:6px;
+      min-width: 360px;
+      pointer-events:auto;
+    }
+    .status .title{ font-weight:900; font-size:13px; letter-spacing:-0.2px; }
+    .status .meta{
+      display:flex; flex-wrap:wrap;
+      gap:10px;
+      font-size:12px;
+      color: var(--muted);
+      letter-spacing:-0.2px;
+      align-items:center;
+    }
+
+    .btnRow{
+      display:flex;
+      gap:8px;
+      padding:8px;
+      align-items:center;
+      pointer-events:auto;
+    }
+
+    button{
+      appearance:none;
+      border:none;
+      background:none;
+      color:inherit;
+      font:inherit;
+    }
+
+    .btn{
+      border: 1px solid rgba(255,255,255,0.14);
+      background: linear-gradient(180deg, var(--btn1), var(--btn2));
+      color: var(--text);
+      padding:10px 12px;
+      border-radius:14px;
+      font-weight:900;
+      font-size:13px;
+      letter-spacing:-0.2px;
+      cursor:pointer;
+      touch-action: manipulation;
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      gap:8px;
+      min-height: 40px;
+      box-shadow: 0 10px 18px rgba(0,0,0,0.22);
+      pointer-events:auto;
+    }
+    .btn.small{ padding:9px 10px; min-height:36px; font-size:12px; border-radius:12px; }
+    .btn.ghost{ background: rgba(255,255,255,0.06); box-shadow:none; }
+    .btn.bad{ background: linear-gradient(180deg, rgba(255,106,106,0.25), rgba(255,106,106,0.16)); border-color: rgba(255,106,106,0.28); }
+    .btn.good{ background: linear-gradient(180deg, rgba(106,227,123,0.22), rgba(106,227,123,0.14)); border-color: rgba(106,227,123,0.28); }
+    .btn.on{ outline:2px solid rgba(106,167,255,0.55); border-color: rgba(106,167,255,0.55); }
+    .btn:active{ transform: translateY(1px); }
+
+    .chip{
+      font-size:12px;
+      padding:6px 10px;
+      border-radius:999px;
+      border: 1px solid rgba(255,255,255,0.12);
+      background: rgba(255,255,255,0.06);
+      color: var(--muted);
+      display:inline-flex;
+      gap:6px;
+      align-items:center;
+    }
+    .chip.good{ color: rgba(106,227,123,0.95); border-color: rgba(106,227,123,0.28); }
+    .chip.warn{ color: rgba(255,211,106,0.95); border-color: rgba(255,211,106,0.30); }
+    .chip.bad{  color: rgba(255,106,106,0.95); border-color: rgba(255,106,106,0.30); }
+
+    .bottombar{
+      position:absolute;
+      left:12px; right:12px; bottom:12px;
+      display:flex;
+      gap:12px;
+      align-items:flex-end;
+      justify-content:space-between;
+      z-index: 10;
+      pointer-events:auto;
+    }
+
+    .joystick{
+      width: 150px; height: 150px;
+      border-radius: 999px;
+      border: 1px solid rgba(255,255,255,0.16);
+      background: radial-gradient(circle at 30% 30%, rgba(255,255,255,0.08), rgba(255,255,255,0.03));
+      position:relative;
+      touch-action:none;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      pointer-events:auto;
+    }
+    .stick{
+      width:64px; height:64px;
+      border-radius:999px;
+      background: rgba(255,255,255,0.12);
+      border:1px solid rgba(255,255,255,0.20);
+      box-shadow: 0 12px 26px rgba(0,0,0,0.28);
+      position:absolute;
+      left:50%; top:50%;
+      transform: translate(-50%,-50%);
+      pointer-events:none;
+    }
+
+    .actions{
+      display:flex;
+      gap:10px;
+      align-items:flex-end;
+      pointer-events:auto;
+    }
+    .col{
+      padding:10px;
+      display:flex;
+      flex-direction:column;
+      gap:10px;
+      align-items:stretch;
+      pointer-events:auto;
+    }
+
+    .toastWrap{
+      position:absolute;
+      left:50%;
+      bottom:190px;
+      transform: translateX(-50%);
+      display:flex;
+      flex-direction:column;
+      gap:8px;
+      align-items:center;
+      pointer-events:none;
+      z-index: 20;
+      max-width: min(640px, calc(100vw - 24px));
+    }
+    .toast{
+      background: rgba(0,0,0,0.60);
+      border: 1px solid rgba(255,255,255,0.14);
+      border-radius: 999px;
+      padding: 10px 14px;
+      font-size: 13px;
+      color: rgba(255,255,255,0.92);
+      backdrop-filter: blur(8px);
+      box-shadow: 0 12px 30px rgba(0,0,0,0.25);
+      opacity:0;
+      transform: translateY(6px);
+      transition: opacity .18s ease, transform .18s ease;
+      text-align:center;
+      line-height:1.25;
+      word-break: keep-all;
+    }
+    .toast.show{ opacity:1; transform: translateY(0); }
+    .toast b{ color:#fff; }
+
+    #debug{
+      position:absolute;
+      left:12px; bottom:12px;
+      transform: translateY(-170px);
+      width: min(760px, calc(100vw - 24px));
+      z-index: 9999;
+      display:block;
+      padding:10px 12px;
+      font-size:12px;
+      color: rgba(255,255,255,0.92);
+      pointer-events:auto;
+    }
+    #debug pre{
+      margin:8px 0 0 0;
+      white-space: pre-wrap;
+      word-break: break-word;
+      color: rgba(255,255,255,0.82);
+      line-height: 1.35;
+    }
+
+    #fatal{
+      position:absolute;
+      inset:12px;
+      z-index: 10000;
+      display:none;
+      padding:14px;
+      background: rgba(0,0,0,0.78);
+      border: 1px solid rgba(255,106,106,0.35);
+      border-radius: 18px;
+      overflow:auto;
+      pointer-events:auto;
+    }
+    #fatal h3{
+      margin:0 0 8px 0;
+      color: rgba(255,106,106,0.95);
+      font-size: 14px;
+      letter-spacing:-0.2px;
+    }
+    #fatal pre{
+      margin:0;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-size: 12px;
+      color: rgba(255,255,255,0.88);
+      line-height: 1.45;
+    }
+
+    @media (max-width: 520px){
+      .joystick{ width:132px; height:132px; }
+      #debug{ transform: translateY(-186px); }
+      .status{ min-width: 300px; }
+    }
   </style>
 </head>
 
 <body>
-  <div id="wrap">
-    <div id="stage">
-      <canvas id="game" width="960" height="540"></canvas>
-      <div id="touch" aria-hidden="true">
-        <div class="btn" id="b-left" data-k="left">◀</div>
-        <div class="btn" id="b-right" data-k="right">▶</div>
+<div id="app">
+  <canvas id="cv"></canvas>
 
-        <div class="btn" id="b-jump" data-k="jump">⤒</div>
-        <div class="btn" id="b-potion" data-k="potion">🧪</div>
-        <div class="btn" id="b-atk" data-k="atk">Z</div>
-        <div class="btn" id="b-skill" data-k="skill">X</div>
+  <div id="hud">
+    <div class="topbar">
+      <div class="panel status">
+        <div class="title">보스게이트 v4.5 (자동 확장자 탐색)</div>
+        <div class="meta">
+          <span id="sceneTxt">장면: -</span>
+          <span id="stageTxt">스테이지: -</span>
+          <span id="timerTxt">제한: -</span>
+          <span id="fpsTxt">FPS: -</span>
+        </div>
+        <div class="meta">
+          <span class="chip" id="devTxt">기기: -</span>
+          <span class="chip" id="ctxTxt">CTX: -</span>
+          <span class="chip" id="assetTxt">ASSET: -</span>
+          <span class="chip good" id="killTxt">처치: 0</span>
+          <span class="chip" id="invTxt">인벤: 0</span>
+        </div>
+      </div>
 
-        <div class="btn" id="b-menu" data-k="menu">⚙</div>
+      <div class="panel btnRow">
+        <button class="btn small" id="btnStage">스테이지</button>
+        <button class="btn small bad" id="btnBoss">보스</button>
+        <button class="btn small ghost" id="btnRespawn">몹재생성</button>
+        <button class="btn small ghost" id="btnReset">리셋</button>
+      </div>
+    </div>
+
+    <div class="toastWrap" id="toastWrap"></div>
+
+    <div class="bottombar">
+      <div class="panel joystick" id="joy">
+        <div class="stick" id="stick"></div>
+      </div>
+
+      <div class="actions">
+        <div class="panel col">
+          <button class="btn good" id="btnAttack">공격</button>
+          <button class="btn" id="btnDash">대시</button>
+        </div>
+        <div class="panel col">
+          <button class="btn small on" id="btnToggleTarget">오토 타겟</button>
+          <button class="btn small on" id="btnToggleAtk">오토 공격</button>
+          <button class="btn small ghost" id="btnPick">줍기</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel" id="debug">
+      <b>DEBUG</b> (ASSET OK 로그가 찍히면 이미지 경로/확장자 정상)
+      <pre id="debugLog"></pre>
+    </div>
+
+    <div id="fatal">
+      <h3>실행 중 에러 발생(먹통 원인)</h3>
+      <pre id="fatalText"></pre>
+      <div style="margin-top:10px; display:flex; gap:10px; flex-wrap:wrap;">
+        <button class="btn small" id="btnHideFatal">닫기</button>
+        <button class="btn small ghost" id="btnReload">새로고침</button>
       </div>
     </div>
   </div>
+</div>
 
 <script>
 (() => {
   "use strict";
 
-  // ============================================================
-  // BOSS GATE - Canvas2D (단일 index.html)
-  //
-  // ✅ FIX#1: Z/X 연타 시 HP가 안 줄어드는 입력 누락 문제 해결
-  //         - pressed + keys(홀드) + 모바일 버튼 상태를 합쳐 "의도" 판정
-  //
-  // ✅ FIX#2: 아이템 드랍 희소성 강화(랜덤/낮은 확률)
-  //
-  // ✅ FIX#3: 인벤 정리/판매 추가
-  //         - 선택 판매
-  //         - 약한 아이템 N개 자동판매
-  //         - 일반(N) 등급 전체 판매
-  // ============================================================
+  // ---------- DOM ----------
+  const cv = document.getElementById("cv");
+  const sceneTxt = document.getElementById("sceneTxt");
+  const stageTxt = document.getElementById("stageTxt");
+  const timerTxt = document.getElementById("timerTxt");
+  const fpsTxt   = document.getElementById("fpsTxt");
+  const devTxt   = document.getElementById("devTxt");
+  const ctxTxt   = document.getElementById("ctxTxt");
+  const assetTxt = document.getElementById("assetTxt");
+  const killTxt  = document.getElementById("killTxt");
+  const invTxt   = document.getElementById("invTxt");
 
-  // -------------------- Canvas --------------------
-  const canvas = document.getElementById("game");
-  const ctx = canvas.getContext("2d", { alpha: false });
+  const toastWrap = document.getElementById("toastWrap");
+  const debugLogEl = document.getElementById("debugLog");
 
-  const VIEW_W = 960;
-  const VIEW_H = 540;
+  const btnStage = document.getElementById("btnStage");
+  const btnBoss  = document.getElementById("btnBoss");
+  const btnRespawn = document.getElementById("btnRespawn");
+  const btnReset = document.getElementById("btnReset");
 
-  function getDpr() { return Math.max(1, Math.min(2.5, window.devicePixelRatio || 1)); }
-  function resize() {
-    const dpr = getDpr();
-    canvas.width = Math.floor(VIEW_W * dpr);
-    canvas.height = Math.floor(VIEW_H * dpr);
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.imageSmoothingEnabled = true;
+  const btnAttack = document.getElementById("btnAttack");
+  const btnDash   = document.getElementById("btnDash");
+  const btnToggleTarget = document.getElementById("btnToggleTarget");
+  const btnToggleAtk    = document.getElementById("btnToggleAtk");
+  const btnPick         = document.getElementById("btnPick");
+
+  const joy = document.getElementById("joy");
+  const stick = document.getElementById("stick");
+
+  const fatal = document.getElementById("fatal");
+  const fatalText = document.getElementById("fatalText");
+  const btnHideFatal = document.getElementById("btnHideFatal");
+  const btnReload = document.getElementById("btnReload");
+
+  // ---------- 오류 처리 ----------
+  function showFatal(msg){
+    fatalText.textContent = msg;
+    fatal.style.display = "block";
   }
-  window.addEventListener("resize", resize, { passive: true });
+  window.addEventListener("error", (e)=>{
+    const msg =
+`[window.onerror]
+${e.message || "unknown error"}
+file: ${e.filename || "-"}
+line: ${e.lineno || "-"} col: ${e.colno || "-"}
+${e.error && e.error.stack ? ("\n" + e.error.stack) : ""}`;
+    showFatal(msg);
+  });
+  window.addEventListener("unhandledrejection", (e)=>{
+    const reason = (e && e.reason) ? (e.reason.stack || String(e.reason)) : "unknown rejection";
+    showFatal(`[unhandledrejection]\n${reason}`);
+  });
+  btnHideFatal.addEventListener("click", ()=> fatal.style.display="none");
+  btnReload.addEventListener("click", ()=> location.reload());
+
+  // ---------- 유틸 ----------
+  const clamp = (v,a,b)=> Math.max(a, Math.min(b,v));
+  const now = ()=> performance.now();
+  const dist = (ax,ay,bx,by)=> Math.hypot(ax-bx, ay-by);
+
+  function isMobileLike(){
+    return (navigator.maxTouchPoints || 0) > 0 || matchMedia("(pointer: coarse)").matches;
+  }
+  devTxt.textContent = `기기: ${isMobileLike() ? "스마트폰/태블릿" : "PC"}`;
+
+  // ---------- 로그 ----------
+  const logs = [];
+  function log(s){
+    const t = new Date().toISOString().slice(11,19);
+    logs.push(`[${t}] ${s}`);
+    while (logs.length > 22) logs.shift();
+    debugLogEl.textContent = logs.join("\n");
+  }
+
+  // ---------- 토스트 ----------
+  const toasts = [];
+  function toast(html, life=1100){
+    const el = document.createElement("div");
+    el.className = "toast";
+    el.innerHTML = html;
+    toastWrap.appendChild(el);
+    requestAnimationFrame(()=> el.classList.add("show"));
+    toasts.push({ el, die: now()+life });
+  }
+  function updateToasts(){
+    const t = now();
+    for (let i=toasts.length-1;i>=0;i--){
+      if (t > toasts[i].die){
+        const el = toasts[i].el;
+        el.classList.remove("show");
+        setTimeout(()=> el.remove(), 220);
+        toasts.splice(i,1);
+      }
+    }
+  }
+
+  // ---------- 버튼 바인딩 ----------
+  function bind(btn, name, fn){
+    const run = (e)=>{
+      try{
+        if (e && e.cancelable) e.preventDefault();
+        log(`BTN: ${name}`);
+        fn();
+      }catch(err){
+        showFatal(`[bind:${name}]\n${err && err.stack ? err.stack : String(err)}`);
+      }
+    };
+    btn.addEventListener("click", run, { passive:false });
+    btn.addEventListener("touchstart", run, { passive:false });
+    btn.addEventListener("pointerdown", run, { passive:false });
+  }
+
+  // ---------- 캔버스 ----------
+  const ctx = (() => {
+    try{
+      const c = cv.getContext("2d", { alpha:false });
+      ctxTxt.textContent = c ? "CTX: 2D OK" : "CTX: FAIL";
+      return c;
+    }catch(_){
+      ctxTxt.textContent = "CTX: FAIL";
+      return null;
+    }
+  })();
+  if (!ctx){
+    showFatal("Canvas 2D 컨텍스트 생성 실패");
+    return;
+  }
+
+  function resize(){
+    const dpr = Math.min(2, Math.max(1, window.devicePixelRatio || 1));
+    const w = Math.max(1, window.innerWidth);
+    const h = Math.max(1, window.innerHeight);
+    cv.width  = Math.floor(w * dpr);
+    cv.height = Math.floor(h * dpr);
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    log(`resize: ${w}x${h} dpr=${dpr}`);
+  }
+  window.addEventListener("resize", resize, { passive:true });
   resize();
 
-  // -------------------- Utils --------------------
-  const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
-  const rand = (a, b) => Math.random() * (b - a) + a;
-  const randi = (a, b) => Math.floor(rand(a, b + 1));
-  const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
-  const dist = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by);
-  const isoNow = () => new Date().toISOString();
-  const lerp = (a,b,t)=>a+(b-a)*t;
-  function smoothFactor(dt, sharpness=18){ return 1 - Math.pow(0.001, dt*sharpness); }
-
-  // -------------------- Prevent scroll by keys --------------------
-  window.addEventListener("keydown", (e) => {
-    const k = e.key.toLowerCase();
-    if (["arrowleft","arrowright","arrowup"," ","z","x","escape","i","p","h"].includes(k)) {
-      e.preventDefault();
-      e.stopPropagation();
-    }
-  }, { passive:false });
-
-  // -------------------- Save --------------------
-  const SAVE_KEY = "boss_gate_web_v8_input_drop_loot_sell";
-  function save(state) { try { localStorage.setItem(SAVE_KEY, JSON.stringify(state)); } catch {} }
-  function load() {
-    try {
-      const raw = localStorage.getItem(SAVE_KEY);
-      if (!raw) return null;
-      return JSON.parse(raw);
-    } catch { return null; }
-  }
-
-  // -------------------- Game States --------------------
-  const GS = { MENU:"MENU", OPTIONS:"OPTIONS", PLAY:"PLAY", PAUSE:"PAUSE", INVENTORY:"INVENTORY", SHOP:"SHOP", EXIT:"EXIT" };
-
-  // -------------------- Audio (확장자 자동 선택) --------------------
-  class AudioMan {
-    constructor() {
-      this.ctx = null; this.master=null; this.bgmGain=null; this.sfxGain=null;
-      this.unlocked = false;
-      this.muted = false; this.bgmOn = true; this.sfxOn = true;
-
-      this._bases = {
-        bgm:  "./assets/bgm",
-        hit:  "./assets/sfx_hit",
-        coin: "./assets/sfx_coin",
-      };
-      this._exts = [".m4a", ".mp3", ".mp4"];
-
-      this.files = {
-        bgm:  new Audio(),
-        hit:  new Audio(),
-        coin: new Audio(),
-      };
-      this.files.bgm.loop = true;
-
-      for (const k of Object.keys(this.files)) {
-        const a = this.files[k];
-        a.preload = "auto";
-        a.volume = (k === "bgm") ? 0.55 : 0.65;
-      }
-
-      this._picked = { bgm:null, hit:null, coin:null };
-      this.preResolveAll().catch(()=>{});
-    }
-
-    _scoreCanPlay(ext){
-      const test = document.createElement("audio");
-      const map = {
-        ".mp3": ["audio/mpeg"],
-        ".m4a": ["audio/mp4", "audio/aac"],
-        ".mp4": ["audio/mp4", "video/mp4"],
-      };
-      const mimes = map[ext] || [];
-      let best = 0;
-      for (const m of mimes){
-        const r = test.canPlayType(m);
-        if (r === "probably") best = Math.max(best, 2);
-        else if (r === "maybe") best = Math.max(best, 1);
-      }
-      return best;
-    }
-
-    _candidateUrls(base){
-      const scored = this._exts.map((ext, idx) => ({
-        url: base + ext,
-        score: this._scoreCanPlay(ext),
-        idx
-      }))
-      .sort((a,b)=> (b.score - a.score) || (a.idx - b.idx));
-      return scored.map(x=>x.url);
-    }
-
-    async _exists(url){
-      try {
-        const r = await fetch(url, { method:"HEAD", cache:"no-cache" });
-        if (r.ok) return true;
-      } catch {}
-      try {
-        const r2 = await fetch(url, { method:"GET", cache:"no-cache" });
-        return r2.ok;
-      } catch {}
-      return false;
-    }
-
-    async resolve(key){
-      if (this._picked[key]) return this._picked[key];
-
-      const base = this._bases[key];
-      const urls = this._candidateUrls(base);
-
-      for (const url of urls){
-        if (await this._exists(url)) {
-          this._picked[key] = url;
-          this._applySource(key, url);
-          return url;
-        }
-      }
-
-      const fallback = urls[0] || (base + ".mp3");
-      this._picked[key] = fallback;
-      this._applySource(key, fallback);
-      return fallback;
-    }
-
-    _applySource(key, url){
-      const a = this.files[key];
-      if (!a) return;
-      if (a.src && a.src.endsWith(url)) return;
-      a.src = url;
-      if (key === "bgm") a.loop = true;
-      a.load();
-    }
-
-    async preResolveAll(){
-      await Promise.all([ this.resolve("bgm"), this.resolve("hit"), this.resolve("coin") ]);
-    }
-
-    ensureCtx() {
-      if (this.ctx) return;
-      const AC = window.AudioContext || window.webkitAudioContext;
-      if (!AC) return;
-      this.ctx = new AC();
-      this.master = this.ctx.createGain();
-      this.bgmGain = this.ctx.createGain();
-      this.sfxGain = this.ctx.createGain();
-      this.master.connect(this.ctx.destination);
-      this.bgmGain.connect(this.master);
-      this.sfxGain.connect(this.master);
-      this.master.gain.value = 0.9;
-      this.bgmGain.gain.value = 0.45;
-      this.sfxGain.gain.value = 0.75;
-    }
-
-    async unlock() {
-      if (this.unlocked) return;
-      this.ensureCtx();
-      try { if (this.ctx && this.ctx.state !== "running") await this.ctx.resume(); } catch {}
-      this.unlocked = true;
-
-      if (this.ctx) {
-        const o = this.ctx.createOscillator();
-        const g = this.ctx.createGain();
-        g.gain.value = 0.0001;
-        o.connect(g); g.connect(this.master);
-        o.start(); o.stop(this.ctx.currentTime + 0.02);
-      }
-    }
-
-    setMuted(v) {
-      this.muted = v;
-      if (this.master) this.master.gain.value = v ? 0 : 0.9;
-      for (const a of Object.values(this.files)) a.muted = v;
-    }
-
-    beep(freq, dur, type="square", vol=0.2) {
-      if (!this.sfxOn || this.muted) return;
-      this.ensureCtx();
-      if (!this.ctx) return;
-      const t0 = this.ctx.currentTime;
-      const o = this.ctx.createOscillator();
-      const g = this.ctx.createGain();
-      o.type = type;
-      o.frequency.setValueAtTime(freq, t0);
-      g.gain.setValueAtTime(0.0001, t0);
-      g.gain.exponentialRampToValueAtTime(vol, t0 + 0.01);
-      g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-      o.connect(g); g.connect(this.sfxGain);
-      o.start(t0); o.stop(t0 + dur + 0.02);
-    }
-
-    async _safePlay(key, fallbackBeep){
-      if (this.muted) return false;
-      await this.resolve(key);
-      const a = this.files[key];
-      try {
-        a.currentTime = 0;
-        await a.play();
-        return true;
-      } catch {
-        this._picked[key] = null;
-        await this.resolve(key);
-        try {
-          a.currentTime = 0;
-          await a.play();
-          return true;
-        } catch {
-          if (fallbackBeep) fallbackBeep();
-          return false;
-        }
-      }
-    }
-
-    async startBgm() {
-      if (!this.bgmOn || this.muted) return;
-      const ok = await this._safePlay("bgm", () => {
-        this.ensureCtx();
-        if (!this.ctx) return;
-        if (this._bgmNode) return;
-        const t0 = this.ctx.currentTime;
-        const o = this.ctx.createOscillator();
-        const g = this.ctx.createGain();
-        o.type = "sine";
-        g.gain.value = 0.0001;
-        o.connect(g); g.connect(this.bgmGain);
-        const notes = [220, 277.18, 329.63, 392.0, 329.63, 277.18];
-        for (let i=0;i<999;i++){
-          const f = notes[i % notes.length] * (i % 12 === 0 ? 0.5 : 1);
-          o.frequency.setValueAtTime(f, t0 + i*0.22);
-        }
-        g.gain.exponentialRampToValueAtTime(0.12, t0 + 0.12);
-        o.start(t0);
-        this._bgmNode = { o, g };
-      });
-      if (ok) {
-        const bgm = this.files.bgm;
-        bgm.loop = true;
-        bgm.volume = 0.55;
-      }
-    }
-
-    stopBgm() {
-      const bgm = this.files.bgm;
-      try { bgm.pause(); bgm.currentTime = 0; } catch {}
-      if (this._bgmNode && this.ctx) {
-        try { this._bgmNode.o.stop(); } catch {}
-        this._bgmNode = null;
-      }
-    }
-
-    async playHit() {
-      if (!this.sfxOn || this.muted) return;
-      await this._safePlay("hit", () => {
-        this.beep(220, 0.06, "square", 0.18);
-        this.beep(120, 0.08, "triangle", 0.12);
-      });
-    }
-
-    async playCoin() {
-      if (!this.sfxOn || this.muted) return;
-      await this._safePlay("coin", () => {
-        this.beep(880, 0.05, "triangle", 0.12);
-        this.beep(1320, 0.06, "sine", 0.10);
-      });
-    }
-  }
-
-  const audio = new AudioMan();
-
-  const unlockOnce = async () => {
-    await audio.unlock();
-    await audio.startBgm();
-    window.removeEventListener("pointerdown", unlockOnce);
-    window.removeEventListener("keydown", unlockOnce);
-  };
-  window.addEventListener("pointerdown", unlockOnce, { passive: true });
-  window.addEventListener("keydown", unlockOnce, { passive: true });
-
-  // -------------------- Input --------------------
-  const keys = new Set();
-  const pressed = { jump:false, atk:false, skill:false, menu:false, inv:false, potion:false };
-
-  window.addEventListener("keydown", (e) => {
-    const k = e.key.toLowerCase();
-    keys.add(k);
-
-    if (k === " " || k === "arrowup") pressed.jump = true;
-    if (k === "z") pressed.atk = true;
-    if (k === "x") pressed.skill = true;
-    if (k === "escape" || k === "p") pressed.menu = true;
-    if (k === "i") pressed.inv = true;
-    if (k === "h") pressed.potion = true;
-  }, { passive:false });
-
-  window.addEventListener("keyup", (e) => keys.delete(e.key.toLowerCase()), { passive:true });
-
-  const touch = document.getElementById("touch");
-  const touchDown = new Set();
-  function setTouchKey(name, down) {
-    if (down) touchDown.add(name);
-    else touchDown.delete(name);
-  }
-  if (touch) {
-    touch.addEventListener("pointerdown", (e) => {
-      const t = e.target;
-      if (!(t instanceof HTMLElement)) return;
-      const k = t.getAttribute("data-k");
-      if (!k) return;
-      e.preventDefault();
-      t.setPointerCapture(e.pointerId);
-      setTouchKey(k, true);
-      if (k === "jump") pressed.jump = true;
-      if (k === "atk") pressed.atk = true;
-      if (k === "skill") pressed.skill = true;
-      if (k === "menu") pressed.menu = true;
-      if (k === "potion") pressed.potion = true;
-    }, { passive:false });
-
-    touch.addEventListener("pointerup", (e) => {
-      const t = e.target;
-      if (!(t instanceof HTMLElement)) return;
-      const k = t.getAttribute("data-k");
-      if (!k) return;
-      e.preventDefault();
-      setTouchKey(k, false);
-    }, { passive:false });
-
-    touch.addEventListener("pointercancel", () => touchDown.clear(), { passive:true });
-  }
-
-  function moveAxis() {
-    let x = 0;
-    if (keys.has("arrowleft") || keys.has("a")) x -= 1;
-    if (keys.has("arrowright") || keys.has("d")) x += 1;
-    if (touchDown.has("left")) x -= 1;
-    if (touchDown.has("right")) x += 1;
-    return clamp(x, -1, 1);
-  }
-
-  // ✅ FIX#1: 공격 의도 판정(연타/홀드/모바일 모두 보장)
-  function wantAttack() {
-    return pressed.atk || keys.has("z") || touchDown.has("atk");
-  }
-  function wantSkill() {
-    return pressed.skill || keys.has("x") || touchDown.has("skill");
-  }
-
-  // -------------------- Pointer (logical coords) --------------------
-  let pointer = { x:0, y:0, down:false, clicked:false };
-  function toLogicalXY(clientX, clientY) {
-    const rect = canvas.getBoundingClientRect();
-    const lx = (clientX - rect.left) / rect.width * VIEW_W;
-    const ly = (clientY - rect.top) / rect.height * VIEW_H;
-    return { x: lx, y: ly };
-  }
-  canvas.addEventListener("pointerdown", (e) => {
-    const p = toLogicalXY(e.clientX, e.clientY);
-    pointer.x = p.x; pointer.y = p.y;
-    pointer.down = true;
-    pointer.clicked = true;
-  }, { passive:true });
-  canvas.addEventListener("pointerup", () => { pointer.down = false; }, { passive:true });
-  canvas.addEventListener("pointermove", (e) => {
-    const p = toLogicalXY(e.clientX, e.clientY);
-    pointer.x = p.x; pointer.y = p.y;
-  }, { passive:true });
-
-  function hitBtn(x,y,w,h){
-    return pointer.clicked && pointer.x>=x && pointer.x<=x+w && pointer.y>=y && pointer.y<=y+h;
-  }
-
-  // -------------------- Assets --------------------
-  function loadImage(src) {
-    const img = new Image();
-    const obj = { img, ok: false };
-    img.onload = () => obj.ok = true;
-    img.onerror = () => obj.ok = false;
-    img.src = src;
-    return obj;
-  }
-  const IMG = {
-    player: loadImage("./assets/player_sheet.png"),
-    slime:  loadImage("./assets/slime_sheet.png"),
-    fxHit:  loadImage("./assets/fx_hit.png"),
-    bg:     loadImage("./assets/bg.png"),
+  // =========================================================
+  //  ASSET SYSTEM (자동 확장자 탐색)
+  // =========================================================
+  const ASSET = {
+    bases: {
+      bg:     "assets/bg",
+      player: "assets/player",
+      slime:  "assets/slime",
+      elite:  "assets/elite",
+      boss:   "assets/boss",
+    },
+    // 가능성 높은 순서 + 대문자 확장자까지 대비
+    exts: ["png","webp","jpg","jpeg","PNG","WEBP","JPG","JPEG"],
+    img: {},
+    ok: {},
+    urlUsed: {},
+    ready: false,
   };
 
-  // -------------------- SpriteSheet --------------------
-  class SpriteSheet {
-    constructor(imageObj, fw, fh, animations) {
-      this.imageObj = imageObj;
-      this.fw = fw;
-      this.fh = fh;
-      this.anim = animations;
+  function loadImageTry(url){
+    return new Promise((resolve)=>{
+      const im = new Image();
+      im.decoding = "async";
+      im.onload = ()=> resolve({ ok:true, im, url });
+      im.onerror = ()=> resolve({ ok:false, im:null, url });
+      im.src = url;
+    });
+  }
+
+  async function loadImageAuto(key){
+    const base = ASSET.bases[key];
+    for (const ext of ASSET.exts){
+      const url = `${base}.${ext}`;
+      const r = await loadImageTry(url);
+      if (r.ok) return r;
     }
-    draw(name, x, y, t, scale=1, flip=false, alpha=1) {
-      const { img, ok } = this.imageObj;
-      const a = this.anim[name] || this.anim.idle;
-      const frames = Math.max(1, a.frames);
-      const idx = a.loop
-        ? Math.floor(t * a.fps) % frames
-        : Math.min(frames - 1, Math.floor(t * a.fps));
-      const sx = idx * this.fw;
-      const sy = a.row * this.fh;
+    return { ok:false, im:null, url:"(not found)" };
+  }
 
-      ctx.save();
-      ctx.globalAlpha = alpha;
-      ctx.translate(x, y);
-      if (flip) ctx.scale(-1, 1);
+  async function preloadAssets(){
+    assetTxt.textContent = "ASSET: 로딩중...";
+    assetTxt.className = "chip";
 
-      if (ok) {
-        ctx.drawImage(img, sx, sy, this.fw, this.fh,
-          -this.fw*scale/2, -this.fh*scale/2, this.fw*scale, this.fh*scale);
+    const keys = Object.keys(ASSET.bases);
+    let okN = 0;
+
+    for (const k of keys){
+      const r = await loadImageAuto(k);
+      ASSET.ok[k] = r.ok;
+      ASSET.urlUsed[k] = r.url;
+      if (r.ok){
+        ASSET.img[k] = r.im;
+        okN++;
+        log(`ASSET OK: ${k} <- ${r.url}`);
       } else {
-        ctx.fillStyle = "rgba(91,140,255,0.95)";
-        if (name === "hurt") ctx.fillStyle = "rgba(255,91,110,0.95)";
-        if (name === "attack") ctx.fillStyle = "rgba(255,207,91,0.95)";
-        ctx.fillRect(-22*scale, -26*scale, 44*scale, 52*scale);
-        ctx.fillStyle = "rgba(235,240,255,0.85)";
-        ctx.fillRect(6*scale, -6*scale, 10*scale, 6*scale);
-      }
-      ctx.restore();
-    }
-  }
-
-  const playerSheet = new SpriteSheet(IMG.player, 64, 64, {
-    idle:   { row:0, frames:6, fps:8,  loop:true  },
-    run:    { row:1, frames:8, fps:12, loop:true  },
-    jump:   { row:2, frames:4, fps:10, loop:false },
-    attack: { row:3, frames:6, fps:16, loop:false },
-    hurt:   { row:4, frames:4, fps:14, loop:false }
-  });
-
-  const slimeSheet = new SpriteSheet(IMG.slime, 64, 64, {
-    idle:   { row:0, frames:6, fps:8,  loop:true  },
-    run:    { row:1, frames:6, fps:10, loop:true  },
-    hurt:   { row:2, frames:4, fps:14, loop:false },
-    attack: { row:3, frames:6, fps:14, loop:false },
-    die:    { row:4, frames:6, fps:12, loop:false }
-  });
-
-  // -------------------- FX --------------------
-  class DamageText {
-    constructor(x, y, text, color="rgba(235,240,255,0.92)") {
-      this.x=x; this.y=y; this.vy=-50;
-      this.text=text; this.t=0; this.life=0.8;
-      this.color=color;
-    }
-    update(dt){ this.t+=dt; this.y += this.vy*dt; }
-    draw(cam){
-      const a = clamp(1 - this.t/this.life, 0, 1);
-      ctx.globalAlpha = a;
-      ctx.fillStyle = this.color;
-      ctx.font = "bold 18px ui-monospace, Menlo, Consolas, monospace";
-      ctx.fillText(this.text, this.x - cam.x, this.y - cam.y);
-      ctx.globalAlpha = 1;
-    }
-    dead(){ return this.t >= this.life; }
-  }
-
-  class Particle {
-    constructor(x,y,vx,vy,life, col){
-      this.x=x; this.y=y; this.vx=vx; this.vy=vy;
-      this.t=0; this.life=life; this.col=col;
-    }
-    update(dt){
-      this.t+=dt;
-      this.vy += 520*dt;
-      this.x += this.vx*dt;
-      this.y += this.vy*dt;
-      this.vx *= Math.pow(0.12, dt);
-      this.vy *= Math.pow(0.22, dt);
-    }
-    draw(cam){
-      const a = clamp(1 - this.t/this.life, 0, 1);
-      ctx.globalAlpha = a;
-      ctx.fillStyle = this.col;
-      ctx.fillRect(this.x - cam.x, this.y - cam.y, 3, 3);
-      ctx.globalAlpha = 1;
-    }
-    dead(){ return this.t >= this.life; }
-  }
-
-  class HitSpark {
-    constructor(x,y){
-      this.x=x; this.y=y; this.t=0; this.life=0.22;
-    }
-    update(dt){ this.t += dt; }
-    draw(cam){
-      const a = clamp(1 - this.t/this.life, 0, 1);
-      const px = this.x - cam.x, py = this.y - cam.y;
-      ctx.save();
-      ctx.globalAlpha = a;
-      if (IMG.fxHit.ok) {
-        const fw=64, fh=64, frames=6;
-        const i = Math.min(frames-1, Math.floor((this.t/this.life)*frames));
-        ctx.drawImage(IMG.fxHit.img, i*fw, 0, fw, fh, px-32, py-32, 64, 64);
-      } else {
-        ctx.strokeStyle = "rgba(255,235,120,0.95)";
-        ctx.lineWidth = 3;
-        const r = 10 + (1-a)*14;
-        for(let i=0;i<8;i++){
-          const ang = (Math.PI*2)*(i/8);
-          ctx.beginPath();
-          ctx.moveTo(px, py);
-          ctx.lineTo(px + Math.cos(ang)*r, py + Math.sin(ang)*r);
-          ctx.stroke();
-        }
-        ctx.fillStyle = "rgba(255,255,255,0.9)";
-        ctx.fillRect(px-2, py-2, 4, 4);
-      }
-      ctx.restore();
-    }
-    dead(){ return this.t >= this.life; }
-  }
-
-  // -------------------- World/Stage --------------------
-  const WORLD = { w: 4200, h: 1200 };
-  const GROUND_Y = 860;
-  const GROUND_SCREEN_Y = VIEW_H - 80;
-  const CAM_Y = Math.max(0, GROUND_Y - GROUND_SCREEN_Y);
-
-  function stageLabel(i){
-    const chap = Math.floor((i-1)/10)+1;
-    const step = ((i-1)%10)+1;
-    return `${chap}-${step}`;
-  }
-  function isBossStage(i){
-    const step = ((i-1)%10)+1;
-    return (step % 5 === 0);
-  }
-
-  function buildPlatforms(stageIndex){
-    const plats = [];
-    plats.push({ x: 0, y: GROUND_Y, w: WORLD.w, h: 80 });
-
-    const seed = stageIndex * 1337;
-    const rng = (n)=> {
-      const s = Math.sin(seed + n*12.9898) * 43758.5453;
-      return s - Math.floor(s);
-    };
-
-    for (let i=0;i<10;i++){
-      const px = 420 + i*320 + randi(-40, 40);
-      const py = GROUND_Y - 120 - Math.floor(rng(i)*220);
-      plats.push({ x:px, y:py, w: 170 + randi(0, 60), h: 18 });
-    }
-    plats.push({ x: WORLD.w - 720, y: GROUND_Y - 160, w: 220, h: 18 });
-    return plats;
-  }
-
-  // -------------------- Items --------------------
-  const SLOTS = ["weapon","armor","ring"];
-  const RAR = [
-    {k:"N",  name:"일반", w:60, opt:0, mult:1.00},
-    {k:"R",  name:"희귀", w:28, opt:1, mult:1.20},
-    {k:"SR", name:"영웅", w:10, opt:2, mult:1.45},
-    {k:"SSR",name:"전설", w: 2, opt:2, mult:1.85},
-  ];
-  const NAMES = {
-    weapon:["나무 검","철검","흑철검","번개의 검","처형자 대검"],
-    armor:["헌 옷","가죽 갑옷","사슬 갑옷","강철 갑옷","수호의 판금"],
-    ring:["동 반지","은 반지","집중의 반지","파괴의 반지","왕의 반지"]
-  };
-  const AFFIX = [
-    {k:"atk", n:"공격", min:1, max:7, w:22},
-    {k:"def", n:"방어", min:1, max:6, w:22},
-    {k:"hp",  n:"체력", min:8, max:26, w:18},
-    {k:"crit",n:"치명", min:1, max:7, w:10},
-    {k:"spd", n:"이속", min:6, max:18, w:10},
-    {k:"atkP",n:"공격%",min:2, max:10,w:8},
-    {k:"hpP", n:"체력%",min:3, max:12,w:5},
-    {k:"ls",  n:"흡혈", min:1, max:4, w:3},
-  ];
-  function wpick(list){
-    const sum = list.reduce((s,x)=>s+x.w,0);
-    let r = Math.random()*sum;
-    for (const x of list){ r-=x.w; if (r<=0) return x; }
-    return list[0];
-  }
-  function rollRarity(){
-    const sum = RAR.reduce((s,x)=>s+x.w,0);
-    let r = Math.random()*sum;
-    for (const x of RAR){ r-=x.w; if (r<=0) return x; }
-    return RAR[0];
-  }
-  function uuid(){
-    if (crypto?.randomUUID) return crypto.randomUUID();
-    return "id-"+Math.random().toString(16).slice(2)+Date.now().toString(16);
-  }
-  function rollAffixes(cnt){
-    const used=new Set(); const out=[];
-    let tries=0;
-    while(out.length<cnt && tries<30){
-      tries++;
-      const a=wpick(AFFIX);
-      if(used.has(a.k)) continue;
-      used.add(a.k);
-      out.push({k:a.k, n:a.n, v:randi(a.min,a.max)});
-    }
-    return out;
-  }
-  function makeItem(slot, level){
-    const rar = rollRarity();
-    const baseName = pick(NAMES[slot]);
-    const ilvl = Math.max(1, level + randi(-1, 2));
-    let atk=0,def=0,hp=0,crit=0,spd=0;
-    if(slot==="weapon") atk = randi(3,7);
-    if(slot==="armor"){ def=randi(2,6); hp=randi(10,22); }
-    if(slot==="ring"){ crit=randi(1,4); atk=randi(1,3); spd=randi(0,6); }
-
-    const mult = rar.mult * (1 + (ilvl-1)*0.04);
-    const stats = {
-      atk: Math.round(atk*mult),
-      def: Math.round(def*mult),
-      hp:  Math.round(hp*mult),
-      crit:Math.round(crit*mult),
-      spd: Math.round(spd*mult),
-    };
-
-    const identified = (rar.k==="N");
-    const hidden = (rar.opt>0) ? rollAffixes(rar.opt) : [];
-
-    return {
-      id: uuid(),
-      slot,
-      name: baseName,
-      rar: rar.k,
-      rarName: rar.name,
-      ilvl,
-      enh: 0,
-      identified,
-      hidden,
-      aff: [],
-      stats,
-      createdAt: isoNow()
-    };
-  }
-  function appraise(it){
-    if(it.identified) return false;
-    it.identified=true;
-    it.aff = it.hidden.slice();
-    it.hidden = [];
-    return true;
-  }
-  function itemPow(it){
-    let p = it.stats.atk*2 + it.stats.def*2 + it.stats.hp*0.6 + it.stats.crit*1.4 + it.stats.spd*0.5 + it.ilvl*2 + it.enh*6;
-    if(it.identified){
-      for(const a of it.aff){
-        if(a.k==="atk") p+=a.v*3;
-        if(a.k==="def") p+=a.v*3;
-        if(a.k==="hp")  p+=a.v*0.8;
-        if(a.k==="crit")p+=a.v*2;
-        if(a.k==="spd") p+=a.v*0.8;
-        if(a.k==="atkP")p+=a.v*4;
-        if(a.k==="hpP") p+=a.v*3;
-        if(a.k==="ls")  p+=a.v*6;
+        log(`ASSET FAIL: ${k} (png/webp/jpg/jpeg 없음)`);
       }
     }
-    return Math.round(p);
-  }
 
-  // ✅ 판매가(장착 제외)
-  function sellPrice(it){
-    // 희소성 유지: 파워+등급+레벨로 가격
-    const rarMult = (it.rar==="SSR")?3.2:(it.rar==="SR")?2.2:(it.rar==="R")?1.5:1.0;
-    const base = 18 + it.ilvl*8 + Math.floor(itemPow(it)*0.12);
-    const idBonus = it.identified ? 1.15 : 0.95;
-    return Math.max(5, Math.floor(base * rarMult * idBonus));
-  }
+    ASSET.ready = true;
 
-  // -------------------- Entities --------------------
-  function aabb(ax,ay,aw,ah, bx,by,bw,bh){
-    return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by;
-  }
-
-  // ---- Heal Tunings ----
-  const POTION_MAX = 12;
-  const POTION_HEAL_PCT = 0.35;
-  const POTION_CD = 8.0;
-  const REGEN_DELAY = 5.0;
-  const REGEN_RATE = 0.02;
-
-  // ---- Combat/Contact Tunings ----
-  const ATTACK_LOCK_ATK = 0.18;
-  const ATTACK_LOCK_SKL = 0.24;
-  const CONTACT_GUARD_ATK = 0.46;
-  const CONTACT_GUARD_SKL = 0.62;
-
-  const CONTACT_SEP_STRENGTH = 0.78;
-
-  // ---- Monster drop rate (FIX#2: 희소성) ----
-  const DROP_RATE_NORMAL = 0.07;
-  const DROP_RATE_ELITE  = 0.18;
-  const DROP_RATE_BOSS   = 0.60;
-  const BOSS_DOUBLE_DROP_RATE = 0.22; // 보스 추가 1개 드랍 확률
-
-  function snapToGround(ent){
-    const gy = GROUND_Y - ent.h/2;
-    if (ent.y > gy) {
-      ent.y = gy;
-      ent.vy = 0;
-      ent.onGround = true;
+    if (okN === 0){
+      assetTxt.textContent = "ASSET: 없음(도형 모드)";
+      assetTxt.className = "chip warn";
+    } else {
+      assetTxt.textContent = `ASSET: ${okN}/${keys.length} 로드`;
+      assetTxt.className = "chip good";
     }
   }
 
-  class Player {
-    constructor() {
-      this.x = 220; this.y = 200;
-      this.vx = 0; this.vy = 0;
-      this.w = 42; this.h = 54;
-      this.face = 1;
-      this.onGround = false;
+  function drawSpriteOrCircle(kind, x, y, r){
+    const mapKey =
+      kind==="player" ? "player" :
+      kind==="slime"  ? "slime"  :
+      kind==="elite"  ? "elite"  :
+      kind==="boss"   ? "boss"   : null;
 
-      this.hpBase = 120;
-      this.atkBase = 14;
-      this.defBase = 6;
-      this.critBase = 6;
-      this.spdBase = 230;
+    const has = mapKey && ASSET.ok[mapKey] && ASSET.img[mapKey];
 
-      this.hp = 120;
-      this.atkCd = 0;
-      this.skillCd = 0;
-      this.inv = 0;
-
-      this.contactGuard = 0;
-      this.attackLock = 0;
-
-      this.potions = 3;
-      this.potionCd = 0;
-      this.noHitT = 999;
-
-      this.anim = "idle";
-      this.animT = 0;
-
-      this.gold = 120;
-      this.stage = 1;
-      this.kills = 0;
-
-      this.invItems = [ makeItem("weapon",1), makeItem("armor",1), makeItem("ring",1) ];
-      this.equip = { weapon:null, armor:null, ring:null };
-      this.autoEquipBest();
+    if (has){
+      const im = ASSET.img[mapKey];
+      const size = r * 2.4;
+      ctx.drawImage(im, x - size/2, y - size/2, size, size);
+      return;
     }
-    derived() {
-      let hpMax = this.hpBase;
-      let atk = this.atkBase;
-      let def = this.defBase;
-      let crit = this.critBase;
-      let spd = this.spdBase;
-      let atkP=0, hpP=0, ls=0;
 
-      for (const s of SLOTS) {
-        const it = this.equip[s];
-        if (!it) continue;
-        atk += it.stats.atk;
-        def += it.stats.def;
-        hpMax += it.stats.hp;
-        crit += it.stats.crit;
-        spd += it.stats.spd;
-
-        if (it.identified) {
-          for (const a of it.aff) {
-            if (a.k==="atk") atk += a.v;
-            if (a.k==="def") def += a.v;
-            if (a.k==="hp")  hpMax += a.v;
-            if (a.k==="crit")crit += a.v;
-            if (a.k==="spd") spd += a.v;
-            if (a.k==="atkP")atkP += a.v;
-            if (a.k==="hpP") hpP += a.v;
-            if (a.k==="ls")  ls += a.v;
-          }
-        }
-      }
-      atk = Math.round(atk * (1 + atkP/100));
-      hpMax = Math.round(hpMax * (1 + hpP/100));
-      crit = clamp(crit, 0, 60);
-      spd = clamp(spd, 160, 310);
-      ls = clamp(ls, 0, 12);
-      return { hpMax, atk, def, crit, spd, ls };
-    }
-    autoEquipBest() {
-      for (const slot of SLOTS) {
-        const current = this.equip[slot];
-        const cand = this.invItems.filter(it => it.slot === slot);
-        if (current) cand.push(current);
-        if (!cand.length) continue;
-        cand.sort((a,b)=>itemPow(b)-itemPow(a));
-        const best = cand[0];
-        if (current && best.id === current.id) continue;
-        if (current) this.invItems.push(current);
-        this.invItems = this.invItems.filter(it => it.id !== best.id);
-        this.equip[slot] = best;
-      }
-      const d = this.derived();
-      this.hp = clamp(this.hp, 1, d.hpMax);
-    }
-  }
-
-  class Slime {
-    constructor(x,y, tier, stageIndex) {
-      this.x=x; this.y=y;
-      this.vx=0; this.vy=0;
-      this.w=44; this.h=42;
-      this.face = -1;
-      this.onGround=false;
-
-      this.tier = tier;
-      this.hpMax = 55 + stageIndex*18 + (tier==="elite"?80:0) + (tier==="boss"?420:0);
-      this.hp = this.hpMax;
-      this.atk = 10 + stageIndex*4 + (tier==="elite"?10:0) + (tier==="boss"?26:0);
-      this.def = 2 + Math.floor(stageIndex/2) + (tier==="elite"?3:0) + (tier==="boss"?8:0);
-      this.spd = (tier==="boss"?150:(tier==="elite"?190:170));
-
-      this.hitCd=0;
-      this.aiT=0;
-
-      this.anim="idle";
-      this.animT=0;
-      this.dead=false;
-      this.dieT=0;
-
-      this.jumpCd = 0;
-      this.groundSnap = true;
-    }
-  }
-
-  class Coin { constructor(x,y,amount){ this.x=x; this.y=y; this.vx=rand(-40,40); this.vy=rand(-280,-120); this.r=8; this.amount=amount; this.t=0; } }
-  class Loot { constructor(x,y,item){ this.x=x; this.y=y; this.vx=rand(-30,30); this.vy=rand(-240,-120); this.r=10; this.item=item; this.t=0; } }
-
-  // -------------------- Camera --------------------
-  const cam = { x:0, y:CAM_Y };
-
-  // -------------------- UI helpers --------------------
-  function roundRect(x, y, w, h, r, fill, stroke){
-    const rr = Math.min(r, w/2, h/2);
+    ctx.fillStyle =
+      kind==="boss" ? "rgba(255,106,106,0.92)" :
+      kind==="elite"? "rgba(106,167,255,0.92)" :
+      kind==="slime"? "rgba(106,227,123,0.92)" :
+                      "rgba(255,255,255,0.95)";
     ctx.beginPath();
-    ctx.moveTo(x+rr, y);
-    ctx.arcTo(x+w, y, x+w, y+h, rr);
-    ctx.arcTo(x+w, y+h, x, y+h, rr);
-    ctx.arcTo(x, y+h, x, y, rr);
-    ctx.arcTo(x, y, x+w, y, rr);
-    ctx.closePath();
-    if (fill) ctx.fill();
-    if (stroke) ctx.stroke();
-  }
-  function panel(x,y,w,h,title){
-    ctx.save();
-    ctx.globalAlpha = 0.92;
-    ctx.fillStyle = "rgba(10,14,24,0.74)";
-    roundRect(x,y,w,h,14,true,false);
-    ctx.strokeStyle = "rgba(255,255,255,0.12)";
-    ctx.lineWidth = 1;
-    roundRect(x,y,w,h,14,false,true);
-
-    ctx.globalAlpha = 1;
-    ctx.fillStyle = "rgba(235,240,255,0.92)";
-    ctx.font = "bold 18px system-ui, -apple-system, Segoe UI, Roboto";
-    ctx.fillText(title, x+16, y+30);
-    ctx.restore();
-  }
-  function btn(x,y,w,h,text,hot=false){
-    ctx.save();
-    ctx.fillStyle = hot ? "rgba(91,140,255,0.22)" : "rgba(255,255,255,0.07)";
-    ctx.strokeStyle = hot ? "rgba(91,140,255,0.50)" : "rgba(255,255,255,0.14)";
-    ctx.lineWidth = 1;
-    roundRect(x,y,w,h,12,true,true);
-    ctx.fillStyle = "rgba(235,240,255,0.92)";
-    ctx.font = "bold 16px system-ui, -apple-system, Segoe UI";
-    const tw = ctx.measureText(text).width;
-    ctx.fillText(text, x + (w-tw)/2, y + h/2 + 6);
-    ctx.restore();
+    ctx.arc(x, y, r, 0, Math.PI*2);
+    ctx.fill();
   }
 
-  const HUD_MENU_BTN = { x: 14+740+10, y: 14, w: 46, h: 46 };
-  const HUD_POTION_BTN = { x: 14+740+10, y: 14+46+8, w: 46, h: 46 };
-
-  function drawIconBtn(x,y,w,h,label,hot=false){
-    ctx.save();
-    ctx.fillStyle = hot ? "rgba(91,140,255,0.22)" : "rgba(255,255,255,0.07)";
-    ctx.strokeStyle = hot ? "rgba(91,140,255,0.55)" : "rgba(255,255,255,0.14)";
-    roundRect(x,y,w,h,12,true,true);
-
-    ctx.fillStyle = "rgba(235,240,255,0.92)";
-    ctx.font = "900 18px system-ui, -apple-system, Segoe UI";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText(label, x + w/2, y + h/2 + 1);
-    ctx.restore();
-  }
-
-  // -------------------- State --------------------
-  function freshState(){
-    const p = new Player();
-    return {
-      ver: 8,
-      game: "보스게이트 (BOSS GATE)",
-      createdAt: isoNow(),
-      updatedAt: isoNow(),
-
-      gs: "MENU",
-      opt: { muted:false, bgm:true, sfx:true },
-
-      player: p,
-      stageIndex: 1,
-      inBossRoom: false,
-
-      platforms: buildPlatforms(1),
-      enemies: [],
-      coins: [],
-      loots: [],
-
-      goalKills: 10,
-      killed: 0,
-
-      door: null,
-      fx: [],
-      dmgText: [],
-      parts: [],
-
-      msg: "보스문을 부숴라. (ESC/P 또는 ⚙: 메뉴, I: 인벤, H: 포션)",
-      msgT: 2.2,
-
-      t: 0,
-      camX: 0,
-
-      // 인벤 UI 상태
-      invPage: 0,
-      invSelId: null,
-    };
-  }
-
-  function applyOptions(state){
-    audio.setMuted(!!state.opt.muted);
-    audio.bgmOn = !!state.opt.bgm;
-    audio.sfxOn = !!state.opt.sfx;
-    if (!audio.bgmOn) audio.stopBgm();
-    else audio.startBgm();
-  }
-
-  function rebuildStage(state){
-    const si = state.stageIndex;
-    state.platforms = buildPlatforms(si);
-    state.enemies = [];
-    state.coins = [];
-    state.loots = [];
-    state.fx = [];
-    state.dmgText = [];
-    state.parts = [];
-    state.door = null;
-
-    state.killed = 0;
-    state.goalKills = isBossStage(si) ? 1 : clamp(8 + Math.floor(si*0.7), 8, 18);
-
-    state.player.x = 220;
-    state.player.y = GROUND_Y - 120;
-    state.player.vx = 0; state.player.vy = 0;
-    state.player.attackLock = 0;
-    state.player.contactGuard = 0;
-
-    state.camX = 0;
-
-    if (isBossStage(si)) {
-      state.inBossRoom = true;
-      const bx = WORLD.w - 760;
-      state.enemies.push(new Slime(bx, GROUND_Y - 120, "boss", si));
-      state.msg = `보스게이트 ${stageLabel(si)} — 보스 등장!`;
-      state.msgT = 1.6;
-    } else {
-      state.inBossRoom = false;
-      const n = state.goalKills;
-      for (let i=0;i<n;i++){
-        const ex = 700 + i*260 + randi(-80,80);
-        state.enemies.push(new Slime(ex, GROUND_Y - 120, Math.random()<0.22 ? "elite":"normal", si));
-      }
-      state.msg = `스테이지 ${stageLabel(si)} 시작! (${state.goalKills}마리 처치)`;
-      state.msgT = 1.8;
-    }
-  }
-
-  function startNew(state){
-    const fresh = freshState();
-    fresh.opt = state.opt;
-    Object.assign(state, fresh);
-    rebuildStage(state);
-    state.gs = "PLAY";
-    save(state);
-  }
-
-  // -------------------- Combat helpers --------------------
-  function rollCrit(crit){ return (Math.random()*100) < crit; }
-  function damageCalc(atk, def, critChance, mult=1){
-    const c = rollCrit(critChance);
-    let dmg = Math.max(1, Math.round(atk*mult) - def);
-    if (c) dmg = Math.round(dmg*1.65);
-    return { dmg, crit:c };
-  }
-  function spawnHitFX(state, x, y){
-    state.fx.push(new HitSpark(x,y));
-    for (let i=0;i<14;i++){
-      state.parts.push(new Particle(x,y, rand(-220,220), rand(-260, -40), rand(0.18, 0.35), "rgba(255,235,120,0.95)"));
-    }
-    audio.playHit();
-  }
-
-  // ✅ FIX#2: 드랍률 낮추고 "랜덤 희소성" 유지
-  function shouldDropItem(tier){
-    if (tier === "boss")  return Math.random() < DROP_RATE_BOSS;
-    if (tier === "elite") return Math.random() < DROP_RATE_ELITE;
-    return Math.random() < DROP_RATE_NORMAL;
-  }
-
-  function dropRewards(state, e){
-    const baseGold = 18 + state.stageIndex*10 + (e.tier==="elite"?40:0) + (e.tier==="boss"?380:0);
-    state.coins.push(new Coin(e.x, e.y, baseGold));
-
-    if (shouldDropItem(e.tier)) {
-      state.loots.push(new Loot(e.x+rand(-10,10), e.y, makeItem(pick(SLOTS), Math.max(1, Math.floor(state.stageIndex/2)+1))));
-      // 보스는 가끔 1개 추가
-      if (e.tier === "boss" && Math.random() < BOSS_DOUBLE_DROP_RATE) {
-        state.loots.push(new Loot(e.x+rand(-14,14), e.y, makeItem(pick(SLOTS), Math.max(1, Math.floor(state.stageIndex/2)+2))));
-      }
-    }
-  }
-
-  function ensureDoor(state){
-    if (state.door) return;
-    const x = WORLD.w - 300;
-    const y = GROUND_Y - 120;
-    const w = 90, h = 120;
-    state.door = { x, y, w, h, kind: state.inBossRoom ? "exit" : "next" };
-    state.msg = state.inBossRoom ? "출구 보스문이 열렸다!" : "다음 보스문이 열렸다!";
-    state.msgT = 1.4;
-  }
-
-  function stageClearReward(state){
-    const p = state.player;
-    const before = p.potions;
-
-    const addPotion = state.inBossRoom ? 2 : 1;
-    p.potions = clamp(p.potions + addPotion, 0, POTION_MAX);
-
-    const bonusGold = state.inBossRoom ? (120 + state.stageIndex*18) : (40 + state.stageIndex*8);
-    p.gold += bonusGold;
-
-    const got = p.potions - before;
-    state.msg = `클리어 보상: +${bonusGold}G ${got>0?`+포션${got}개`:``}`.trim();
-    state.msgT = 1.6;
-  }
-
-  // -------------------- Physics --------------------
-  function collidePlatforms(ent, plats){
-    ent.onGround = false;
-
-    ent.x += ent.vx;
-    for (const p of plats){
-      if (aabb(ent.x - ent.w/2, ent.y - ent.h/2, ent.w, ent.h, p.x, p.y, p.w, p.h)){
-        if (ent.vx > 0) ent.x = p.x - (ent.w/2);
-        else if (ent.vx < 0) ent.x = p.x + p.w + (ent.w/2);
-        ent.vx = 0;
-      }
-    }
-
-    ent.y += ent.vy;
-    for (const p of plats){
-      if (aabb(ent.x - ent.w/2, ent.y - ent.h/2, ent.w, ent.h, p.x, p.y, p.w, p.h)){
-        if (ent.vy > 0) {
-          ent.y = p.y - (ent.h/2);
-          ent.vy = 0;
-          ent.onGround = true;
-        } else if (ent.vy < 0) {
-          ent.y = p.y + p.h + (ent.h/2);
-          ent.vy = 0;
-        }
-      }
-    }
-
-    ent.x = clamp(ent.x, 40, WORLD.w - 40);
-    ent.y = clamp(ent.y, 40, WORLD.h - 40);
-  }
-
-  // -------------------- Background --------------------
-  function drawBackground(){
-    if (IMG.bg.ok) {
-      const img = IMG.bg.img;
-      const par = 0.35;
-      const bx = - (cam.x * par) % img.width;
-      for (let x = bx - img.width; x < VIEW_W + img.width; x += img.width) {
-        ctx.drawImage(img, x, 0, img.width, Math.min(VIEW_H, img.height));
-      }
-      ctx.fillStyle = "rgba(0,0,0,0.25)";
-      ctx.fillRect(0,0,VIEW_W,VIEW_H);
-    } else {
-      const g = ctx.createLinearGradient(0,0,0,VIEW_H);
-      g.addColorStop(0, "#061021");
-      g.addColorStop(1, "#070a14");
-      ctx.fillStyle = g;
-      ctx.fillRect(0,0,VIEW_W,VIEW_H);
-    }
-  }
-
-  // -------------------- Heal: potion / regen / lifesteal --------------------
-  function tryUsePotion(state){
-    const p = state.player;
-    const d = p.derived();
-
-    if (p.potionCd > 0) {
-      state.msg = `포션 쿨타임 ${p.potionCd.toFixed(1)}s`;
-      state.msgT = 0.9;
-      return false;
-    }
-    if (p.potions <= 0) {
-      state.msg = "포션이 없다! (⚙→상점에서 구매 가능)";
-      state.msgT = 1.2;
-      return false;
-    }
-    if (p.hp >= d.hpMax) {
-      state.msg = "HP가 이미 가득하다.";
-      state.msgT = 0.9;
-      return false;
-    }
-
-    const heal = Math.max(1, Math.floor(d.hpMax * POTION_HEAL_PCT));
-    const before = p.hp;
-    p.hp = clamp(p.hp + heal, 0, d.hpMax);
-    p.potions -= 1;
-    p.potionCd = POTION_CD;
-
-    audio.playCoin();
-    state.dmgText.push(new DamageText(p.x, p.y - 72, `+${Math.floor(p.hp - before)}`, "rgba(46,229,157,0.95)"));
-    state.msg = `포션 사용! (+${Math.floor(p.hp - before)} HP)`;
-    state.msgT = 1.1;
-    save(state);
-    return true;
-  }
-
-  function applyRegen(state, dt){
-    const p = state.player;
-    const d = p.derived();
-    if (p.hp <= 0) return;
-    if (p.hp >= d.hpMax) return;
-
-    if (p.noHitT >= REGEN_DELAY) {
-      const heal = d.hpMax * REGEN_RATE * dt;
-      p.hp = clamp(p.hp + heal, 0, d.hpMax);
-    }
-  }
-
-  function applyLifesteal(state, dmg){
-    const p = state.player;
-    const d = p.derived();
-    if (d.ls <= 0) return;
-    if (dmg <= 0) return;
-    if (p.hp <= 0) return;
-
-    const heal = Math.floor(dmg * (d.ls/100));
-    if (heal <= 0) return;
-    const before = p.hp;
-    p.hp = clamp(p.hp + heal, 0, d.hpMax);
-    const got = Math.floor(p.hp - before);
-    if (got > 0) {
-      state.dmgText.push(new DamageText(p.x, p.y - 86, `+${got}`, "rgba(46,229,157,0.90)"));
-    }
-  }
-
-  // -------------------- Overlap stabilize --------------------
-  function stabilizeOverlapNoBounce(state, p, e){
-    const dx = (p.x - e.x);
-    const overlapX = (p.w/2 + e.w/2) - Math.abs(dx);
-    if (overlapX <= 0) return false;
-
-    const dir = dx === 0 ? (p.face || 1) : Math.sign(dx);
-    const push = overlapX * CONTACT_SEP_STRENGTH;
-
-    p.x += dir * (push * 0.35);
-    e.x -= dir * (push * 0.65);
-
-    p.vx *= 0.10;
-    e.vx *= 0.10;
-
-    e.vy = 0;
-    if (e.groundSnap) snapToGround(e);
-
-    return true;
-  }
-
-  // -------------------- Draw helpers --------------------
-  function drawPlatforms(plats){
-    for (const p of plats) {
-      const x = p.x - cam.x;
-      const y = p.y - cam.y;
-      ctx.fillStyle = "rgba(255,255,255,0.08)";
-      ctx.fillRect(x, y, p.w, p.h);
-      ctx.fillStyle = "rgba(91,140,255,0.10)";
-      ctx.fillRect(x, y, p.w, 3);
-    }
-  }
-  function drawDoor(door){
-    const x = door.x - cam.x;
-    const y = door.y - cam.y;
-    ctx.fillStyle = door.kind==="next" ? "rgba(91,140,255,0.20)" : "rgba(255,91,110,0.22)";
-    roundRect(x, y, door.w, door.h, 10, true, false);
-    ctx.strokeStyle = door.kind==="next" ? "rgba(91,140,255,0.55)" : "rgba(255,91,110,0.55)";
-    ctx.lineWidth = 2;
-    roundRect(x, y, door.w, door.h, 10, false, true);
-    ctx.fillStyle = "rgba(235,240,255,0.92)";
-    ctx.font = "bold 12px ui-monospace, Menlo, Consolas";
-    ctx.fillText(door.kind==="next" ? "BOSS GATE" : "EXIT GATE", x+10, y+20);
-    ctx.lineWidth = 1;
-  }
-  function drawCoins(coins){
-    for (const c of coins) {
-      const x = c.x - cam.x, y = c.y - cam.y;
-      ctx.fillStyle = "rgba(255,207,91,0.92)";
-      ctx.beginPath(); ctx.arc(x,y,c.r,0,Math.PI*2); ctx.fill();
-      ctx.fillStyle = "rgba(255,255,255,0.35)";
-      ctx.fillRect(x-2,y-5,3,3);
-    }
-  }
-  function drawLoot(loots){
-    for (const l of loots) {
-      const x = l.x - cam.x, y = l.y - cam.y;
-      ctx.fillStyle = "rgba(91,140,255,0.92)";
-      ctx.beginPath(); ctx.arc(x,y,l.r,0,Math.PI*2); ctx.fill();
-      ctx.fillStyle = "rgba(235,240,255,0.60)";
-      ctx.fillRect(x-3,y-3,6,6);
-    }
-  }
-
-  // -------------------- HUD --------------------
-  function drawHud(state){
-    const p = state.player;
-    const d = p.derived();
-
-    ctx.globalAlpha = 0.90;
-    ctx.fillStyle = "rgba(10,14,24,0.70)";
-    roundRect(14, 14, 740, 96, 14, true, false);
-    ctx.strokeStyle = "rgba(255,255,255,0.12)";
-    roundRect(14, 14, 740, 96, 14, false, true);
-    ctx.globalAlpha = 1;
-
-    const hpPct = clamp(p.hp / d.hpMax, 0, 1);
-    ctx.fillStyle = "rgba(255,255,255,0.10)";
-    ctx.fillRect(30, 34, 300, 14);
-    ctx.fillStyle = "rgba(46,229,157,0.85)";
-    ctx.fillRect(30, 34, 300*hpPct, 14);
-
-    const sc = clamp(p.skillCd / 2.8, 0, 1);
-    ctx.fillStyle = "rgba(255,255,255,0.08)";
-    ctx.fillRect(30, 54, 300, 10);
-    ctx.fillStyle = "rgba(91,140,255,0.75)";
-    ctx.fillRect(30, 54, 300*(1-sc), 10);
-
-    const pc = clamp(p.potionCd / POTION_CD, 0, 1);
-    ctx.fillStyle = "rgba(255,255,255,0.08)";
-    ctx.fillRect(30, 70, 300, 10);
-    ctx.fillStyle = "rgba(255,207,91,0.75)";
-    ctx.fillRect(30, 70, 300*(1-pc), 10);
-
-    ctx.fillStyle = "rgba(235,240,255,0.92)";
-    ctx.font = "bold 12px ui-monospace, Menlo, Consolas";
-    ctx.fillText(`BOSS GATE | STAGE ${stageLabel(state.stageIndex)} ${state.inBossRoom ? "(BOSS)" : ""} | KILL ${state.killed}/${state.goalKills}`, 350, 38);
-    ctx.fillText(`HP ${Math.floor(p.hp)}/${d.hpMax}  ATK ${d.atk} DEF ${d.def} CRIT ${d.crit}%  SPD ${d.spd}  LS ${d.ls}%`, 350, 56);
-    ctx.fillText(`GOLD ${p.gold}G | 포션 ${p.potions}/${POTION_MAX} (H/🧪) | 전투이탈 ${Math.max(0,(REGEN_DELAY - p.noHitT)).toFixed(1)}s → 자동회복`, 350, 74);
-    ctx.fillText(`⚙:메뉴  I:인벤  Z:공격(홀드/연타OK)  X:스킬(홀드/연타OK)  Space:점프  H:포션`, 350, 92);
-
-    const hotGear = (pointer.x>=HUD_MENU_BTN.x && pointer.x<=HUD_MENU_BTN.x+HUD_MENU_BTN.w &&
-                     pointer.y>=HUD_MENU_BTN.y && pointer.y<=HUD_MENU_BTN.y+HUD_MENU_BTN.h);
-    drawIconBtn(HUD_MENU_BTN.x, HUD_MENU_BTN.y, HUD_MENU_BTN.w, HUD_MENU_BTN.h, "⚙", hotGear);
-
-    const hotPot = (pointer.x>=HUD_POTION_BTN.x && pointer.x<=HUD_POTION_BTN.x+HUD_POTION_BTN.w &&
-                    pointer.y>=HUD_POTION_BTN.y && pointer.y<=HUD_POTION_BTN.y+HUD_POTION_BTN.h);
-    drawIconBtn(HUD_POTION_BTN.x, HUD_POTION_BTN.y, HUD_POTION_BTN.w, HUD_POTION_BTN.h, "🧪", hotPot);
-
-    ctx.save();
-    ctx.globalAlpha = 0.95;
-    ctx.fillStyle = "rgba(0,0,0,0.35)";
-    roundRect(HUD_POTION_BTN.x+26, HUD_POTION_BTN.y+28, 20, 16, 8, true, false);
-    ctx.fillStyle = "rgba(255,255,255,0.92)";
-    ctx.font = "bold 11px ui-monospace, Menlo, Consolas";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText(String(p.potions), HUD_POTION_BTN.x+36, HUD_POTION_BTN.y+36);
-    ctx.restore();
-
-    if (state.msgT > 0 && state.msg) {
-      ctx.globalAlpha = clamp(state.msgT/0.5, 0, 1);
-      ctx.fillStyle = "rgba(0,0,0,0.35)";
-      roundRect(14, 120, 700, 36, 12, true, false);
-      ctx.fillStyle = "rgba(235,240,255,0.92)";
-      ctx.font = "bold 14px system-ui, -apple-system, Segoe UI";
-      ctx.fillText(state.msg, 28, 144);
-      ctx.globalAlpha = 1;
-    }
-  }
-
-  function drawBossGateLogo(cx, cy, t){
-    const flick = 0.6 + 0.4*Math.sin(t*2.6) + (Math.sin(t*17.0)*0.08);
-    const glow = 12 + 10*(0.5+0.5*Math.sin(t*3.2));
-    const shine = 0.35 + 0.65*(0.5+0.5*Math.sin(t*1.25));
-
-    ctx.save();
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-
-    ctx.font = "900 46px system-ui, -apple-system, Segoe UI";
-    ctx.shadowColor = `rgba(91,140,255,${0.55*flick})`;
-    ctx.shadowBlur = glow;
-    ctx.fillStyle = `rgba(235,240,255,0.92)`;
-    ctx.fillText("보스게이트", cx, cy-10);
-
-    ctx.font = "800 16px ui-monospace, Menlo, Consolas";
-    ctx.shadowColor = `rgba(255,235,120,${0.35*shine})`;
-    ctx.shadowBlur = 10;
-    ctx.fillStyle = `rgba(255,235,120,0.85)`;
-    ctx.fillText("BOSS GATE", cx, cy+26);
-
-    const w = 520, h = 64;
-    const x0 = cx - w/2, y0 = cy - 42;
-    const sweepX = x0 + (t*220 % (w+160)) - 80;
-    const grad = ctx.createLinearGradient(sweepX, 0, sweepX+120, 0);
-    grad.addColorStop(0, "rgba(255,255,255,0)");
-    grad.addColorStop(0.5, `rgba(255,255,255,${0.25*shine})`);
-    grad.addColorStop(1, "rgba(255,255,255,0)");
-
-    ctx.globalAlpha = 1;
-    ctx.fillStyle = grad;
-    roundRect(x0, y0, w, h, 12, true, false);
-
-    ctx.restore();
-  }
-
-  // -------------------- Menu/Options --------------------
-  function drawMenu(state){
-    drawBackground();
-    const px = VIEW_W*0.5-260, py = VIEW_H*0.5-190;
-    panel(px, py, 520, 380, " ");
-    drawBossGateLogo(VIEW_W*0.5, VIEW_H*0.5-110, state.t);
-
-    ctx.fillStyle = "rgba(235,240,255,0.75)";
-    ctx.font = "14px system-ui, -apple-system, Segoe UI";
-    ctx.textAlign = "center";
-    ctx.fillText("스테이지를 뚫고, 보스문을 부숴라.", VIEW_W*0.5, VIEW_H*0.5-62);
-    ctx.textAlign = "left";
-
-    const bx = VIEW_W*0.5-180, by = VIEW_H*0.5-30, bw=360, bh=52;
-    const hasSave = !!load();
-
-    btn(bx, by, bw, bh, "새 게임 시작", true);
-    btn(bx, by+64, bw, bh, hasSave ? "이어하기" : "이어하기(저장 없음)", hasSave);
-    btn(bx, by+128, bw, bh, "옵션");
-    btn(bx, by+192, bw, bh, "저장 삭제", false);
-
-    if (hitBtn(bx,by,bw,bh)) startNew(state);
-
-    if (hasSave && hitBtn(bx,by+64,bw,bh)) {
-      const s = load();
-      if (s) {
-        const restored = revive(s);
-        Object.assign(state, restored);
-        applyOptions(state);
-        state.gs = "PLAY";
-      }
-    }
-
-    if (hitBtn(bx,by+128,bw,bh)) state.gs = "OPTIONS";
-
-    if (hitBtn(bx,by+192,bw,bh)) {
-      localStorage.removeItem(SAVE_KEY);
-      state.msg = "저장 삭제 완료.";
-      state.msgT = 1.5;
-    }
-
-    ctx.fillStyle = "rgba(235,240,255,0.55)";
-    ctx.font = "12px ui-monospace, Menlo, Consolas";
-    ctx.fillText("모바일: 버튼/⚙ 메뉴 / PC: 방향키 + Z/X(홀드/연타OK) + Space + H + ESC/P 또는 ⚙ + I 인벤", VIEW_W*0.5-240, VIEW_H*0.5+210);
-  }
-
-  function drawOptions(state){
-    drawBackground();
-    panel(VIEW_W*0.5-260, VIEW_H*0.5-170, 520, 340, "옵션");
-
-    const bx = VIEW_W*0.5-200, by = VIEW_H*0.5-90, bw=400, bh=52;
-
-    btn(bx, by, bw, bh, `음소거: ${state.opt.muted ? "ON" : "OFF"}`, !state.opt.muted);
-    btn(bx, by+64, bw, bh, `BGM: ${state.opt.bgm ? "ON" : "OFF"}`, state.opt.bgm);
-    btn(bx, by+128, bw, bh, `SFX: ${state.opt.sfx ? "ON" : "OFF"}`, state.opt.sfx);
-    btn(bx, by+212, bw, bh, "뒤로가기", true);
-
-    if (hitBtn(bx,by,bw,bh)) { state.opt.muted = !state.opt.muted; applyOptions(state); save(state); }
-    if (hitBtn(bx,by+64,bw,bh)) { state.opt.bgm = !state.opt.bgm; applyOptions(state); save(state); }
-    if (hitBtn(bx,by+128,bw,bh)) { state.opt.sfx = !state.opt.sfx; applyOptions(state); save(state); }
-    if (hitBtn(bx,by+212,bw,bh)) { state.gs = "MENU"; }
-
-    ctx.fillStyle = "rgba(235,240,255,0.65)";
-    ctx.font = "13px system-ui, -apple-system, Segoe UI";
-    ctx.fillText("오디오가 안 나면 화면을 한 번 탭/클릭해서 언락해줘.", VIEW_W*0.5-200, VIEW_H*0.5+70);
-  }
-
-  // -------------------- Scene draw --------------------
-  function drawScene(state, dim=false){
-    drawBackground();
-    drawPlatforms(state.platforms);
-    if (state.door) drawDoor(state.door);
-    drawCoins(state.coins);
-    drawLoot(state.loots);
-
-    for (const e of state.enemies) {
-      const x = e.x - cam.x;
-      const y = e.y - cam.y;
-      const flip = (e.face === -1);
-      const name = e.dead ? "die" : e.anim;
-      const scale = (e.tier==="boss") ? 1.45 : (e.tier==="elite" ? 1.15 : 1.0);
-      slimeSheet.draw(name, x, y-8, e.animT, scale, flip, e.hitCd>0 ? 0.75 : 1);
-
-      if (!e.dead) {
-        const pct = clamp(e.hp/e.hpMax, 0,1);
-        ctx.fillStyle = "rgba(0,0,0,0.35)";
-        ctx.fillRect(x-34*scale, y-56*scale, 68*scale, 8);
-        ctx.fillStyle = (e.tier==="boss") ? "rgba(255,91,110,0.85)" : "rgba(46,229,157,0.85)";
-        ctx.fillRect(x-34*scale, y-56*scale, 68*scale*pct, 8);
-
-        // (선택) 숫자 표시로 "안 깎이는 착시" 방지
-        ctx.fillStyle = "rgba(235,240,255,0.75)";
-        ctx.font = "10px ui-monospace, Menlo, Consolas";
-        ctx.fillText(`${Math.floor(e.hp)}/${e.hpMax}`, x-30*scale, y-60*scale);
-      }
-    }
-
-    const p = state.player;
-    const px = p.x - cam.x;
-    const py = p.y - cam.y;
-    const flipP = (p.face === -1);
-    playerSheet.draw(p.anim, px, py-10, p.animT, 1.15, flipP, p.inv>0 ? 0.65 : 1);
-
-    for (const f of state.fx) f.draw(cam);
-    for (const t of state.dmgText) t.draw(cam);
-    for (const pa of state.parts) pa.draw(cam);
-
-    if (dim) {
-      ctx.fillStyle = "rgba(0,0,0,0.35)";
-      ctx.fillRect(0,0,VIEW_W,VIEW_H);
-    }
-    drawHud(state);
-  }
-
-  function hardExitNow(){
-    try { window.close(); } catch {}
-    try { location.replace("about:blank"); } catch { location.href = "about:blank"; }
-  }
-
-  // -------------------- Pause/Shop/Inventory --------------------
-  function drawPause(state){
-    drawScene(state, true);
-
-    const px = VIEW_W*0.5-260;
-    const py = 70;
-    const pw = 520;
-    const ph = 400;
-    panel(px, py, pw, ph, "일시정지 / 메뉴");
-
-    const bx = VIEW_W*0.5-190;
-    const by = py + 54;
-    const bw = 380;
-    const bh = 46;
-    const gap = 10;
-
-    const items = [
-      { t:"재개", hot:true, fn:()=> state.gs="PLAY" },
-      { t:"인벤토리(판매/정리)", hot:true, fn:()=> state.gs="INVENTORY" },
-      { t:"상점(포션 구매)", hot:true, fn:()=> state.gs="SHOP" },
-      { t:"옵션", hot:false, fn:()=> state.gs="OPTIONS" },
-      { t:"저장 후 타이틀로", hot:false, fn:()=> { save(state); state.gs="MENU"; state.msg="저장 완료. 타이틀로 이동."; state.msgT=1.5; } },
-      { t:"저장 삭제", hot:false, fn:()=> { localStorage.removeItem(SAVE_KEY); state.msg="저장 삭제 완료."; state.msgT=1.5; } },
-      { t:"게임 종료(완전 탈출)", hot:true, fn:()=> { hardExitNow(); state.gs="EXIT"; } },
-    ];
-
-    for (let i=0;i<items.length;i++){
-      const y = by + i*(bh+gap);
-      btn(bx, y, bw, bh, items[i].t, items[i].hot);
-      if (hitBtn(bx, y, bw, bh)) items[i].fn();
-    }
-
-    ctx.fillStyle = "rgba(235,240,255,0.60)";
-    ctx.font = "12px ui-monospace, Menlo, Consolas";
-    ctx.fillText("ESC/P 또는 ⚙ 버튼으로 메뉴 열기/닫기", bx, py + ph - 18);
-
-    if (pressed.menu) { pressed.menu = false; state.gs = "PLAY"; }
-  }
-
-  function drawShop(state){
-    drawScene(state, true);
-    panel(VIEW_W*0.5-300, VIEW_H*0.5-190, 600, 380, "상점 — 포션 판매");
-
-    const p = state.player;
-    const d = p.derived();
-
-    const price = 60 + Math.floor(state.stageIndex*5);
-    const bx = VIEW_W*0.5-240, by = VIEW_H*0.5-90, bw=480, bh=56;
-
-    ctx.fillStyle = "rgba(235,240,255,0.78)";
-    ctx.font = "14px ui-monospace, Menlo, Consolas";
-    ctx.fillText(`GOLD ${p.gold}G | 포션 ${p.potions}/${POTION_MAX} | 포션효과: 최대HP ${Math.round(POTION_HEAL_PCT*100)}%`, VIEW_W*0.5-240, VIEW_H*0.5-120);
-
-    btn(bx, by, bw, bh, `포션 1개 구매 (${price}G)`, true);
-    btn(bx, by+76, bw, bh, `포션 5개 구매 (${price*5}G)`, true);
-    btn(bx, by+152, bw, bh, `참고: 아이템 드랍률은 낮게(희소성) 설정됨`, false);
-    btn(bx, by+228, bw, bh, "뒤로가기", true);
-
-    if (hitBtn(bx,by,bw,bh)) {
-      if (p.potions >= POTION_MAX) { state.msg="포션 보유 한도다."; state.msgT=1.2; }
-      else if (p.gold < price) { state.msg="골드가 부족하다."; state.msgT=1.2; }
-      else {
-        p.gold -= price;
-        p.potions = clamp(p.potions + 1, 0, POTION_MAX);
-        audio.playCoin();
-        state.msg = `포션 구매 완료! (-${price}G)`;
-        state.msgT = 1.2;
-        save(state);
-      }
-    }
-
-    if (hitBtn(bx,by+76,bw,bh)) {
-      const want = Math.min(5, POTION_MAX - p.potions);
-      const cost = price * want;
-      if (want <= 0) { state.msg="포션 보유 한도다."; state.msgT=1.2; }
-      else if (p.gold < cost) { state.msg=`골드가 부족하다. (${cost}G 필요)`; state.msgT=1.2; }
-      else {
-        p.gold -= cost;
-        p.potions = clamp(p.potions + want, 0, POTION_MAX);
-        audio.playCoin();
-        state.msg = `포션 ${want}개 구매! (-${cost}G)`;
-        state.msgT = 1.2;
-        save(state);
-      }
-    }
-
-    if (hitBtn(bx,by+228,bw,bh)) state.gs = "PAUSE";
-    if (pressed.menu) { pressed.menu=false; state.gs="PAUSE"; }
-  }
-
-  // ✅ FIX#3: 인벤 판매/정리
-  function isEquipped(player, itemId){
-    for (const s of SLOTS){
-      if (player.equip[s]?.id === itemId) return true;
-    }
-    return false;
-  }
-
-  function getInvListSorted(player){
-    return player.invItems.slice().sort((a,b)=>itemPow(b)-itemPow(a));
-  }
-
-  function sellItemById(state, id){
-    const p = state.player;
-    const idx = p.invItems.findIndex(it => it.id === id);
-    if (idx < 0) return false;
-    const it = p.invItems[idx];
-    if (isEquipped(p, it.id)) return false;
-    const gain = sellPrice(it);
-    p.gold += gain;
-    p.invItems.splice(idx, 1);
-    audio.playCoin();
-    state.msg = `판매: [${it.rar}] ${it.name} (+${gain}G)`;
-    state.msgT = 1.4;
-    if (state.invSelId === id) state.invSelId = null;
-    save(state);
-    return true;
-  }
-
-  function autoSellWeak(state, count){
-    const p = state.player;
-    const list = getInvListSorted(p)
-      .filter(it => !isEquipped(p, it.id));
-    if (!list.length) {
-      state.msg = "판매할 인벤 아이템이 없다.";
-      state.msgT = 1.2;
+  function drawBg(w,h){
+    if (ASSET.ok.bg && ASSET.img.bg){
+      const im = ASSET.img.bg;
+      const iw = im.width, ih = im.height;
+      const s = Math.max(w/iw, h/ih);
+      const dw = iw*s, dh = ih*s;
+      ctx.drawImage(im, (w-dw)/2, (h-dh)/2, dw, dh);
       return;
     }
-    // 약한 것부터 팔기: 정렬 반대로
-    const weak = list.slice().sort((a,b)=>itemPow(a)-itemPow(b)).slice(0, count);
-    let sold=0, gain=0;
-    for (const it of weak){
-      const g = sellPrice(it);
-      const ok = sellItemById(state, it.id);
-      if (ok){ sold++; gain += g; }
-    }
-    state.msg = sold>0 ? `자동 정리: 약한 ${sold}개 판매 (+${gain}G)` : "자동 정리 실패.";
-    state.msgT = 1.4;
-    save(state);
+    ctx.fillStyle = "rgba(0,0,0,0.25)";
+    ctx.fillRect(0,0,w,h);
   }
 
-  function sellAllNormal(state){
-    const p = state.player;
-    const normals = p.invItems.filter(it => it.rar==="N" && !isEquipped(p,it.id));
-    if (!normals.length){
-      state.msg = "판매할 일반(N) 아이템이 없다.";
-      state.msgT = 1.2;
-      return;
-    }
-    let sold=0, gain=0;
-    for (const it of normals.slice()){
-      const g = sellPrice(it);
-      const ok = sellItemById(state, it.id);
-      if (ok){ sold++; gain += g; }
-    }
-    state.msg = `일반(N) ${sold}개 판매 (+${gain}G)`;
-    state.msgT = 1.4;
-    save(state);
+  // =========================================================
+  //  GAME (v4.4 로직 유지)
+  // =========================================================
+  const Game = {
+    scene: "stage",
+    stageId: "1-1",
+    stageTime: 0,
+    timeLimit: 300,
+    autoTarget: true,
+    autoAttack: true,
+    kills: 0,
+  };
+
+  const Player = {
+    x: 0, y: 0,
+    r: 14,
+    spd: 240,
+    dashTime: 0,
+    dashCd: 0,
+    atk: 16,
+    atkRange: 36,
+    atkCd: 0.28,
+    atkTimer: 0,
+  };
+
+  const Mobs = [];
+  let mobSeq = 1;
+  const Inv = [];
+
+  function syncHUD(){
+    sceneTxt.textContent = `장면: ${Game.scene==="stage" ? "스테이지" : "보스"}`;
+    stageTxt.textContent = `스테이지: ${Game.stageId}`;
+    btnToggleTarget.classList.toggle("on", Game.autoTarget);
+    btnToggleAtk.classList.toggle("on", Game.autoAttack);
+    killTxt.textContent = `처치: ${Game.kills}`;
+    invTxt.textContent = `인벤: ${Inv.length}`;
   }
 
-  function drawInventory(state){
-    drawScene(state, true);
-    panel(VIEW_W*0.5-390, VIEW_H*0.5-230, 780, 460, "인벤토리 / 장비(감정/판매/정리)");
+  function mobTemplate(kind){
+    if (kind === "boss")  return { r: 36, hp: 320, spd: 70 };
+    if (kind === "elite") return { r: 18, hp: 90,  spd: 120 };
+    return { r: 14, hp: 55,  spd: 95 };
+  }
 
-    const p = state.player;
-    const d = p.derived();
+  function respawnMobs(){
+    Mobs.length = 0;
+    mobSeq = 1;
 
-    ctx.fillStyle = "rgba(235,240,255,0.75)";
-    ctx.font = "13px ui-monospace, Menlo, Consolas";
-    ctx.fillText(`STAGE ${stageLabel(state.stageIndex)} | GOLD ${p.gold}G | POTION ${p.potions}/${POTION_MAX} | 인벤 ${p.invItems.length}개`, VIEW_W*0.5-360, VIEW_H*0.5-188);
-
-    // 좌측: 장착
-    const ex = VIEW_W*0.5-360, ey=VIEW_H*0.5-162;
-    ctx.fillStyle = "rgba(255,255,255,0.08)";
-    roundRect(ex, ey, 330, 150, 12, true, false);
-    ctx.strokeStyle = "rgba(255,255,255,0.12)";
-    roundRect(ex, ey, 330, 150, 12, false, true);
-
-    ctx.fillStyle = "rgba(235,240,255,0.92)";
-    ctx.font = "bold 14px system-ui, -apple-system, Segoe UI";
-    ctx.fillText("장착 장비", ex+14, ey+26);
-
-    let lineY = ey+52;
-    ctx.font = "12px ui-monospace, Menlo, Consolas";
-    for (const slot of SLOTS) {
-      const it = p.equip[slot];
-      const txt = it
-        ? `${slot.toUpperCase()}: [${it.rar}] +${it.enh} ${it.name}${it.identified?"":"(미감정)"} (PWR ${itemPow(it)})`
-        : `${slot.toUpperCase()}: (없음)`;
-      ctx.fillStyle = "rgba(235,240,255,0.78)";
-      ctx.fillText(txt, ex+14, lineY);
-      lineY += 22;
-    }
-
-    ctx.fillStyle = "rgba(235,240,255,0.60)";
-    ctx.fillText(`ATK ${d.atk} DEF ${d.def} CRIT ${d.crit}% SPD ${d.spd} LS ${d.ls}%`, ex+14, ey+140);
-
-    // 우측: 인벤 리스트(페이지)
-    const ix = VIEW_W*0.5-10, iy=VIEW_H*0.5-162;
-    const iw = 370, ih = 330;
-    ctx.fillStyle = "rgba(255,255,255,0.08)";
-    roundRect(ix, iy, iw, ih, 12, true, false);
-    ctx.strokeStyle = "rgba(255,255,255,0.12)";
-    roundRect(ix, iy, iw, ih, 12, false, true);
-
-    ctx.fillStyle = "rgba(235,240,255,0.92)";
-    ctx.font = "bold 14px system-ui, -apple-system, Segoe UI";
-    ctx.fillText(`인벤토리`, ix+14, iy+26);
-
-    const sorted = getInvListSorted(p);
-    const pageSize = 10;
-    const maxPage = Math.max(0, Math.ceil(sorted.length / pageSize) - 1);
-    state.invPage = clamp(state.invPage, 0, maxPage);
-    const page = state.invPage;
-
-    ctx.fillStyle = "rgba(235,240,255,0.60)";
-    ctx.font = "12px ui-monospace, Menlo, Consolas";
-    ctx.fillText(`Page ${page+1}/${maxPage+1}  (클릭해서 선택 → 판매 가능)`, ix+14, iy+46);
-
-    const list = sorted.slice(page*pageSize, page*pageSize + pageSize);
-
-    // 리스트 클릭 영역
-    const rowX = ix+14;
-    let rowY = iy+62;
-    const rowW = iw-28;
-    const rowH = 24;
-
-    for (const it of list) {
-      const selected = (state.invSelId === it.id);
-      const equipped = isEquipped(p, it.id);
-      ctx.fillStyle = selected ? "rgba(91,140,255,0.20)" : "rgba(255,255,255,0.04)";
-      roundRect(rowX, rowY-16, rowW, rowH, 8, true, false);
-
-      ctx.fillStyle = equipped ? "rgba(255,235,120,0.82)" : "rgba(235,240,255,0.75)";
-      ctx.font = "12px ui-monospace, Menlo, Consolas";
-      const tagEq = equipped ? " [장착]" : "";
-      const idt = it.identified ? "" : "(미감정)";
-      const line = `[${it.rar}] ${it.slot} ${it.name}${idt}${tagEq}  PWR ${itemPow(it)}  판매 ${sellPrice(it)}G`;
-      ctx.fillText(line.slice(0, 58), rowX+8, rowY);
-
-      // 클릭 시 선택
-      if (hitBtn(rowX, rowY-16, rowW, rowH)) {
-        state.invSelId = it.id;
-        save(state);
+    if (Game.scene === "stage"){
+      for (let i=0;i<8;i++){
+        const kind = Math.random()<0.2 ? "elite" : "slime";
+        const t = mobTemplate(kind);
+        Mobs.push({
+          id: mobSeq++,
+          kind,
+          x:(Math.random()*2-1)*260,
+          y:(Math.random()*2-1)*170,
+          r:t.r,
+          hp:t.hp,
+          hpMax:t.hp,
+          spd:t.spd,
+          phase: Math.random()*Math.PI*2,
+          hitFlash: 0,
+          knockX: 0,
+          knockY: 0,
+        });
       }
-
-      rowY += 28;
-    }
-
-    // 선택 아이템 상세
-    const sx = ex, sy = ey + 170, sw = 330, sh = 150;
-    ctx.fillStyle = "rgba(255,255,255,0.08)";
-    roundRect(sx, sy, sw, sh, 12, true, false);
-    ctx.strokeStyle = "rgba(255,255,255,0.12)";
-    roundRect(sx, sy, sw, sh, 12, false, true);
-
-    const sel = p.invItems.find(it => it.id === state.invSelId) || null;
-    ctx.fillStyle = "rgba(235,240,255,0.92)";
-    ctx.font = "bold 14px system-ui, -apple-system, Segoe UI";
-    ctx.fillText("선택 아이템", sx+14, sy+26);
-
-    ctx.font = "12px ui-monospace, Menlo, Consolas";
-    ctx.fillStyle = "rgba(235,240,255,0.72)";
-    if (!sel) {
-      ctx.fillText("오른쪽 리스트에서 아이템을 클릭해 선택.", sx+14, sy+56);
-      ctx.fillText("선택 후: 판매 / 감정 / 자동장착 가능.", sx+14, sy+78);
     } else {
-      const idt = sel.identified ? "" : "(미감정)";
-      ctx.fillText(`[${sel.rar}] ${sel.slot} ${sel.name}${idt}`, sx+14, sy+56);
-      ctx.fillText(`Lv${sel.ilvl}  PWR ${itemPow(sel)}  판매가 ${sellPrice(sel)}G`, sx+14, sy+78);
-      const aff = sel.identified
-        ? (sel.aff.length ? sel.aff.map(a=>`${a.n}${a.k.endsWith("P")?"%":""}+${a.v}`).join(", ") : "옵션 없음")
-        : "옵션 ??? (감정 필요)";
-      ctx.fillText(`옵션: ${aff}`.slice(0, 44), sx+14, sy+100);
-      ctx.fillText(`스탯: ATK${sel.stats.atk} DEF${sel.stats.def} HP${sel.stats.hp} CRIT${sel.stats.crit} SPD${sel.stats.spd}`, sx+14, sy+122);
+      const t = mobTemplate("boss");
+      Mobs.push({
+        id: mobSeq++,
+        kind:"boss",
+        x: 260, y: 0,
+        r:t.r,
+        hp:t.hp,
+        hpMax:t.hp,
+        spd:t.spd,
+        phase: Math.random()*Math.PI*2,
+        hitFlash: 0,
+        knockX: 0,
+        knockY: 0,
+      });
     }
-
-    // 하단 버튼들
-    const bx = VIEW_W*0.5-360, by=VIEW_H*0.5+168, bw=156, bh=44, gap=10;
-
-    btn(bx, by, bw, bh, "자동 장착", true);
-    btn(bx+(bw+gap), by, bw, bh, "감정(미감정)", true);
-    btn(bx+2*(bw+gap), by, bw, bh, "선택 판매", true);
-    btn(bx+3*(bw+gap), by, bw, bh, "닫기(I)", true);
-
-    const by2 = by + 54;
-    btn(bx, by2, bw, bh, "약한 10개 판매", false);
-    btn(bx+(bw+gap), by2, bw, bh, "일반(N) 판매", false);
-    btn(bx+2*(bw+gap), by2, bw, bh, "이전 페이지", false);
-    btn(bx+3*(bw+gap), by2, bw, bh, "다음 페이지", false);
-
-    if (hitBtn(bx,by,bw,bh)) { p.autoEquipBest(); state.msg="자동 장착 완료."; state.msgT=1.2; save(state); }
-
-    if (hitBtn(bx+(bw+gap),by,bw,bh)) {
-      const targets = p.invItems.filter(it => !it.identified);
-      if (!targets.length) { state.msg="미감정 아이템이 없다."; state.msgT=1.2; }
-      else {
-        let done=0, spent=0;
-        for (const it of targets) {
-          const cost = 40 + it.ilvl*6 + (it.rar==="SSR"?120:it.rar==="SR"?70:it.rar==="R"?45:0);
-          if (p.gold < cost) break;
-          p.gold -= cost; spent += cost;
-          if (appraise(it)) done++;
-        }
-        state.msg = done>0 ? `감정 ${done}개 완료 (-${spent}G)` : "골드 부족으로 감정 실패.";
-        state.msgT = 1.4;
-        save(state);
-      }
-    }
-
-    // ✅ 선택 판매
-    if (hitBtn(bx+2*(bw+gap),by,bw,bh)) {
-      if (!sel) { state.msg="먼저 아이템을 선택해."; state.msgT=1.2; }
-      else if (isEquipped(p, sel.id)) { state.msg="장착 중인 아이템은 판매 불가."; state.msgT=1.2; }
-      else sellItemById(state, sel.id);
-    }
-
-    if (hitBtn(bx+3*(bw+gap),by,bw,bh)) state.gs = "PLAY";
-
-    if (hitBtn(bx,by2,bw,bh)) autoSellWeak(state, 10);
-    if (hitBtn(bx+(bw+gap),by2,bw,bh)) sellAllNormal(state);
-
-    if (hitBtn(bx+2*(bw+gap),by2,bw,bh)) { state.invPage = Math.max(0, state.invPage-1); save(state); }
-    if (hitBtn(bx+3*(bw+gap),by2,bw,bh)) { state.invPage = Math.min(maxPage, state.invPage+1); save(state); }
-
-    if (pressed.inv)  { pressed.inv=false; state.gs="PLAY"; }
-    if (pressed.menu) { pressed.menu=false; state.gs="PAUSE"; }
+    log(`MOBS: ${Mobs.length} spawned`);
   }
 
-  function drawExitScreen(){
-    ctx.fillStyle = "#050812";
-    ctx.fillRect(0,0,VIEW_W,VIEW_H);
-    ctx.fillStyle = "rgba(235,240,255,0.92)";
-    ctx.font = "900 28px system-ui, -apple-system, Segoe UI";
-    ctx.textAlign = "center";
-    ctx.fillText("게임 종료", VIEW_W/2, VIEW_H/2 - 10);
-    ctx.font = "14px system-ui, -apple-system, Segoe UI";
-    ctx.fillStyle = "rgba(235,240,255,0.70)";
-    ctx.fillText("브라우저가 탭 닫기를 막으면 빈 화면으로 이동합니다.", VIEW_W/2, VIEW_H/2 + 24);
-    ctx.textAlign = "left";
+  function startStage(){
+    Game.scene = "stage";
+    Game.stageId = "1-1";
+    Game.stageTime = 0;
+    Game.timeLimit = 300;
+    Player.x = 0; Player.y = 0;
+    Player.dashTime = 0; Player.dashCd = 0;
+    Player.atkTimer = 0;
+    respawnMobs();
+    syncHUD();
+    toast("<b>스테이지 1-1</b> 시작", 900);
   }
 
-  // -------------------- Gameplay Update --------------------
-  function updatePlay(state, dt){
-    const p = state.player;
-    const d = p.derived();
-
-    p.atkCd = Math.max(0, p.atkCd - dt);
-    p.skillCd = Math.max(0, p.skillCd - dt);
-    p.inv = Math.max(0, p.inv - dt);
-
-    p.contactGuard = Math.max(0, p.contactGuard - dt);
-    p.attackLock = Math.max(0, p.attackLock - dt);
-
-    p.potionCd = Math.max(0, p.potionCd - dt);
-    p.noHitT += dt;
-
-    applyRegen(state, dt);
-
-    const ax = moveAxis();
-
-    if (p.attackLock > 0 && p.onGround) {
-      p.vx = 0;
-    } else {
-      p.vx = ax * d.spd * dt;
-    }
-
-    if (ax !== 0) p.face = ax > 0 ? 1 : -1;
-
-    if (pressed.jump && p.onGround) {
-      p.vy = -520;
-      p.onGround = false;
-    }
-    pressed.jump = false;
-
-    if (pressed.potion) {
-      tryUsePotion(state);
-    }
-    pressed.potion = false;
-
-    p.vy += 1200 * dt;
-    collidePlatforms(p, state.platforms);
-
-    if (p.inv > 0) p.anim = "hurt";
-    else if (!p.onGround) p.anim = "jump";
-    else if (Math.abs(ax) > 0.05 && p.attackLock <= 0) p.anim = "run";
-    else p.anim = "idle";
-
-    p.animT += dt;
-    if (p.anim !== state._prevAnimP) { p.animT = 0; state._prevAnimP = p.anim; }
-
-    // ✅ FIX#1: 공격/스킬 "의도" 판정으로 안정화
-    const doAtk = wantAttack();
-    const doSkl = wantSkill();
-
-    // Z 공격 (홀드/연타 OK)
-    if (doAtk && p.atkCd <= 0) {
-      p.atkCd = 0.30;
-      p.anim = "attack"; p.animT = 0;
-      p.attackLock = Math.max(p.attackLock, ATTACK_LOCK_ATK);
-      p.contactGuard = Math.max(p.contactGuard, CONTACT_GUARD_ATK);
-
-      const hx = p.x + p.face * 46;
-      const hy = p.y - 10;
-      const hw = 72, hh = 52;
-
-      let hit = 0;
-      for (const e of state.enemies) {
-        if (e.dead) continue;
-        if (aabb(hx - hw/2, hy - hh/2, hw, hh, e.x - e.w/2, e.y - e.h/2, e.w, e.h)) {
-          const { dmg, crit } = damageCalc(d.atk, e.def, d.crit, 1.05);
-          e.hp = clamp(e.hp - dmg, 0, e.hpMax);
-          e.hitCd = 0.12;
-
-          e.vy = 0;
-          snapToGround(e);
-
-          hit++;
-          applyLifesteal(state, dmg);
-
-          spawnHitFX(state, e.x, e.y - 14);
-          state.dmgText.push(new DamageText(
-            e.x, e.y - 64, `${crit ? "✦" : ""}${dmg}`,
-            crit ? "rgba(255,235,120,0.95)" : "rgba(235,240,255,0.92)"
-          ));
-
-          if (e.hp <= 0) {
-            e.dead = true; e.dieT = 0;
-            dropRewards(state, e);
-            state.killed++;
-            p.kills++;
-          }
-        }
-      }
-      if (hit === 0) audio.playHit();
-    }
-    pressed.atk = false;
-
-    // X 스킬 (홀드/연타 OK)
-    if (doSkl && p.skillCd <= 0) {
-      p.skillCd = 2.8;
-      p.atkCd = 0.42;
-      p.anim = "attack"; p.animT = 0;
-      p.attackLock = Math.max(p.attackLock, ATTACK_LOCK_SKL);
-      p.contactGuard = Math.max(p.contactGuard, CONTACT_GUARD_SKL);
-
-      const hx = p.x + p.face * 78;
-      const hy = p.y - 12;
-      const hw = 160, hh = 76;
-
-      for (const e of state.enemies) {
-        if (e.dead) continue;
-        if (aabb(hx - hw/2, hy - hh/2, hw, hh, e.x - e.w/2, e.y - e.h/2, e.w, e.h)) {
-          const { dmg, crit } = damageCalc(d.atk, e.def, d.crit, 1.85);
-          e.hp = clamp(e.hp - dmg, 0, e.hpMax);
-          e.hitCd = 0.16;
-
-          e.vy = 0;
-          snapToGround(e);
-
-          applyLifesteal(state, dmg);
-
-          spawnHitFX(state, e.x, e.y - 14);
-          state.dmgText.push(new DamageText(
-            e.x, e.y - 64, `${crit ? "✦" : ""}${dmg}`,
-            "rgba(255,207,91,0.95)"
-          ));
-
-          if (e.hp <= 0) {
-            e.dead = true; e.dieT = 0;
-            dropRewards(state, e);
-            state.killed++;
-            p.kills++;
-          }
-        }
-      }
-    }
-    pressed.skill = false;
-
-    // 적 AI + 접촉 처리
-    for (const e of state.enemies) {
-      if (e.dead) { e.dieT += dt; continue; }
-      e.hitCd = Math.max(0, e.hitCd - dt);
-      e.aiT += dt;
-      e.jumpCd = Math.max(0, e.jumpCd - dt);
-
-      const dx = p.x - e.x;
-      const ad = Math.abs(dx);
-      const chase = ad < 360 || (e.tier==="boss" && ad < 520);
-      const dir = dx > 0 ? 1 : -1;
-      e.face = dir;
-
-      if (e.onGround && chase && e.jumpCd <= 0 && ad > 140 && Math.random() < 0.002) {
-        e.vy = -420;
-        e.jumpCd = 1.25;
-      }
-
-      e.vx = chase ? (dir * e.spd * dt * 0.75) : (Math.sin(e.aiT*1.2) * e.spd * dt * 0.28);
-
-      e.vy += 1100 * dt;
-
-      collidePlatforms(e, state.platforms);
-      snapToGround(e);
-
-      const overlapped = aabb(
-        p.x - p.w/2, p.y - p.h/2, p.w, p.h,
-        e.x - e.w/2, e.y - e.h/2, e.w, e.h
-      );
-
-      if (overlapped && (p.attackLock > 0 || p.contactGuard > 0)) {
-        stabilizeOverlapNoBounce(state, p, e);
-      }
-
-      if (overlapped && p.inv <= 0 && p.attackLock <= 0 && p.contactGuard <= 0) {
-        const { dmg } = damageCalc(e.atk, d.def, 0, 1);
-        p.hp = clamp(p.hp - dmg, 0, d.hpMax);
-        p.inv = 0.55;
-        p.noHitT = 0;
-
-        audio.playHit();
-        state.dmgText.push(new DamageText(p.x, p.y - 64, `-${dmg}`, "rgba(255,91,110,0.95)"));
-
-        p.x += -e.face * 22;
-
-        if (p.hp <= 0) {
-          const lost = Math.round(p.gold * 0.08);
-          p.gold = Math.max(0, p.gold - lost);
-          p.hp = d.hpMax;
-          p.noHitT = 999;
-          state.gs = "MENU";
-          state.msg = `보스게이트에서 쓰러졌다… ${lost}G 잃음.`;
-          state.msgT = 2.0;
-          save(state);
-          return;
-        }
-      }
-
-      if (e.dead) e.anim = "die";
-      else if (e.hitCd > 0) e.anim = "hurt";
-      else if (!e.onGround) e.anim = "run";
-      else if (chase) e.anim = "run";
-      else e.anim = "idle";
-
-      e.animT += dt;
-      if (e.anim !== e._prevAnim) { e.animT = 0; e._prevAnim = e.anim; }
-    }
-
-    if (state.killed >= state.goalKills) ensureDoor(state);
-
-    // 코인 줍기
-    for (let i=state.coins.length-1;i>=0;i--){
-      const c = state.coins[i];
-      c.t += dt;
-      c.vy += 1100*dt;
-      c.x += c.vx*dt;
-      c.y += c.vy*dt;
-      if (c.y > GROUND_Y - 12) {
-        c.y = GROUND_Y - 12;
-        c.vy *= -0.22;
-        c.vx *= 0.55;
-      }
-      if (dist(c.x,c.y, p.x, p.y-20) < 38) {
-        p.gold += c.amount;
-        state.coins.splice(i,1);
-        audio.playCoin();
-      }
-    }
-
-    // 아이템 줍기
-    for (let i=state.loots.length-1;i>=0;i--){
-      const l = state.loots[i];
-      l.t += dt;
-      l.vy += 1100*dt;
-      l.x += l.vx*dt;
-      l.y += l.vy*dt;
-      if (l.y > GROUND_Y - 16) {
-        l.y = GROUND_Y - 16;
-        l.vy *= -0.18;
-        l.vx *= 0.45;
-      }
-      if (dist(l.x,l.y, p.x, p.y-20) < 38) {
-        p.invItems.push(l.item);
-        state.loots.splice(i,1);
-        state.msg = `획득: [${l.item.rar}] ${l.item.name}${l.item.identified?"":"(미감정)"}`;
-        state.msgT = 1.5;
-      }
-    }
-
-    // 문 진입 → 다음 스테이지
-    if (state.door) {
-      const d0 = state.door;
-      if (aabb(p.x - p.w/2, p.y - p.h/2, p.w, p.h, d0.x, d0.y, d0.w, d0.h)) {
-        stageClearReward(state);
-        state.stageIndex += 1;
-        state.player.stage = state.stageIndex;
-        rebuildStage(state);
-        save(state);
-      }
-    }
-
-    // FX update
-    for (const f of state.fx) f.update(dt);
-    state.fx = state.fx.filter(x => !x.dead());
-    for (const t of state.dmgText) t.update(dt);
-    state.dmgText = state.dmgText.filter(x => !x.dead());
-    for (const pa of state.parts) pa.update(dt);
-    state.parts = state.parts.filter(x => !x.dead());
-
-    if (state.msgT > 0) state.msgT -= dt;
-
-    // 카메라: 세로 고정
-    cam.y = CAM_Y;
-
-    // 카메라: 가로 부드럽게
-    const targetX = clamp(p.x - VIEW_W*0.45, 0, WORLD.w - VIEW_W);
-    state.camX = lerp(state.camX, targetX, smoothFactor(dt, 18));
-    cam.x = state.camX;
-
-    // HUD 버튼
-    const hotGear = (pointer.x>=HUD_MENU_BTN.x && pointer.x<=HUD_MENU_BTN.x+HUD_MENU_BTN.w &&
-                     pointer.y>=HUD_MENU_BTN.y && pointer.y<=HUD_MENU_BTN.y+HUD_MENU_BTN.h);
-    if (pointer.clicked && hotGear) { state.gs = "PAUSE"; save(state); }
-
-    const hotPotionHud = (pointer.x>=HUD_POTION_BTN.x && pointer.x<=HUD_POTION_BTN.x+HUD_POTION_BTN.w &&
-                          pointer.y>=HUD_POTION_BTN.y && pointer.y<=HUD_POTION_BTN.y+HUD_POTION_BTN.h);
-    if (pointer.clicked && hotPotionHud) { tryUsePotion(state); }
-
-    if (pressed.menu) { pressed.menu = false; state.gs = "PAUSE"; save(state); return; }
-    if (pressed.inv)  { pressed.inv  = false; state.gs = "INVENTORY"; save(state); return; }
+  function startBoss(){
+    Game.scene = "boss";
+    Game.stageId = "BOSS";
+    Game.stageTime = 0;
+    Game.timeLimit = 240;
+    Player.x = 0; Player.y = 0;
+    Player.dashTime = 0; Player.dashCd = 0;
+    Player.atkTimer = 0;
+    respawnMobs();
+    syncHUD();
+    toast("<b>보스전</b> 시작", 900);
   }
 
-  // -------------------- Revive --------------------
-  function revive(raw){
-    const st = freshState();
-    st.gs = raw.gs || "MENU";
-    st.opt = raw.opt || st.opt;
-
-    st.player = new Player();
-    Object.assign(st.player, raw.player || {});
-    st.player.invItems ??= [];
-    st.player.equip ??= { weapon:null, armor:null, ring:null };
-    for (const s of SLOTS) st.player.equip[s] = st.player.equip[s] || null;
-
-    st.player.potions = (raw.player?.potions ?? st.player.potions);
-    st.player.potionCd = (raw.player?.potionCd ?? 0);
-    st.player.noHitT = (raw.player?.noHitT ?? 999);
-    st.player.contactGuard = (raw.player?.contactGuard ?? 0);
-    st.player.attackLock = (raw.player?.attackLock ?? 0);
-
-    st.stageIndex = raw.stageIndex ?? st.stageIndex;
-    st.inBossRoom = raw.inBossRoom ?? st.inBossRoom;
-
-    st.invPage = raw.invPage ?? 0;
-    st.invSelId = raw.invSelId ?? null;
-
-    rebuildStage(st);
-
-    st.player.invItems = raw.player?.invItems ?? st.player.invItems;
-    st.player.equip = raw.player?.equip ?? st.player.equip;
-    for (const s of SLOTS) st.player.equip[s] = st.player.equip[s] || null;
-
-    st.player.gold = raw.player?.gold ?? st.player.gold;
-    st.player.hp = raw.player?.hp ?? st.player.hp;
-
-    st.killed = raw.killed ?? 0;
-    st.goalKills = raw.goalKills ?? st.goalKills;
-
-    st.msg = raw.msg ?? st.msg;
-    st.msgT = raw.msgT ?? 0;
-
-    st.t = 0;
-    st.camX = raw.camX ?? 0;
-    return st;
+  function resetAll(){
+    Game.kills = 0;
+    Inv.length = 0;
+    startStage();
+    toast("<b>리셋 완료</b>", 800);
   }
 
-  // -------------------- Init --------------------
-  let state = load() ? revive(load()) : freshState();
-  applyOptions(state);
-  if (state.gs === "PLAY") rebuildStage(state);
+  // ---------- Joystick ----------
+  const Joy = { active:false, id:null, cx:0, cy:0, x:0, y:0, maxR:56 };
+  function resetStick(){ stick.style.transform = "translate(-50%,-50%)"; }
+  function setStick(dx,dy){
+    const r = Math.hypot(dx,dy);
+    let sx=dx, sy=dy;
+    if (r > Joy.maxR){
+      const k = Joy.maxR / r;
+      sx*=k; sy*=k;
+    }
+    stick.style.transform = `translate(calc(-50% + ${sx}px), calc(-50% + ${sy}px))`;
+  }
+  function joyStart(clientX, clientY){
+    Joy.active = true;
+    const rect = joy.getBoundingClientRect();
+    Joy.cx = rect.left + rect.width/2;
+    Joy.cy = rect.top  + rect.height/2;
+    const dx = clientX - Joy.cx;
+    const dy = clientY - Joy.cy;
+    setStick(dx,dy);
+    Joy.x = clamp(dx/Joy.maxR, -1, 1);
+    Joy.y = clamp(dy/Joy.maxR, -1, 1);
+  }
+  function joyMove(clientX, clientY){
+    if (!Joy.active) return;
+    const dx = clientX - Joy.cx;
+    const dy = clientY - Joy.cy;
+    setStick(dx,dy);
+    Joy.x = clamp(dx/Joy.maxR, -1, 1);
+    Joy.y = clamp(dy/Joy.maxR, -1, 1);
+  }
+  function joyEnd(){
+    Joy.active = false;
+    Joy.x = 0; Joy.y = 0;
+    resetStick();
+  }
 
-  // -------------------- Loop --------------------
-  let last = performance.now();
-  function loop(t){
-    const dt = Math.min(0.033, (t - last)/1000);
+  joy.addEventListener("pointerdown", (e)=>{ if (e.cancelable) e.preventDefault(); joyStart(e.clientX, e.clientY); }, {passive:false});
+  joy.addEventListener("pointermove", (e)=>{ if (e.cancelable) e.preventDefault(); joyMove(e.clientX, e.clientY); }, {passive:false});
+  joy.addEventListener("pointerup",   (e)=>{ if (e.cancelable) e.preventDefault(); joyEnd(); }, {passive:false});
+  joy.addEventListener("pointercancel",(e)=>{ if (e.cancelable) e.preventDefault(); joyEnd(); }, {passive:false});
+
+  // ---------- Combat ----------
+  function nearestMobInRange(range){
+    let best=null, bestD=1e9;
+    for (const m of Mobs){
+      if (m.hp<=0) continue;
+      const d = dist(Player.x, Player.y, m.x, m.y);
+      if (d<bestD){ bestD=d; best=m; }
+    }
+    if (!best) return null;
+    return bestD <= range + best.r ? best : null;
+  }
+
+  function dealDamage(m, dmg, knock=120){
+    m.hp = Math.max(0, m.hp - dmg);
+    m.hitFlash = 0.12;
+
+    const dx = m.x - Player.x;
+    const dy = m.y - Player.y;
+    const len = Math.hypot(dx,dy) || 1;
+    m.knockX += (dx/len) * knock;
+    m.knockY += (dy/len) * knock;
+
+    if (m.hp<=0){
+      Game.kills += 1;
+      if (Math.random()<0.40){
+        Inv.push({ name:"미감정 장비", desc:"기본공격 +1~3 (잠재: 미공개)" });
+        toast("드랍: <b>미감정 장비</b>", 900);
+      }
+      syncHUD();
+    }
+  }
+
+  function tryAttack(src="btn"){
+    if (Player.atkTimer>0) return;
+    Player.atkTimer = Player.atkCd;
+
+    const target = nearestMobInRange(Player.atkRange);
+    if (!target){ toast("헛손질", 450); return; }
+
+    const dmg = Player.atk + (Math.random()<0.18 ? 10 : 0);
+    dealDamage(target, dmg, target.kind==="boss" ? 80 : 140);
+  }
+
+  function resolvePlayerMobCollisions(){
+    for (const m of Mobs){
+      if (m.hp<=0) continue;
+      const dx = Player.x - m.x;
+      const dy = Player.y - m.y;
+      const d = Math.hypot(dx,dy) || 0.0001;
+      const minD = Player.r + m.r;
+      if (d < minD){
+        const push = (minD - d);
+        const nx = dx / d;
+        const ny = dy / d;
+        Player.x += nx * push;
+        Player.y += ny * push;
+        m.x -= nx * (push*0.20);
+        m.y -= ny * (push*0.20);
+      }
+    }
+  }
+
+  function moveMobs(dt){
+    for (const m of Mobs){
+      if (m.hp<=0) continue;
+      m.phase += dt * (m.kind==="boss" ? 1.1 : 1.8);
+      m.hitFlash = Math.max(0, m.hitFlash - dt);
+
+      const kDamp=10;
+      m.knockX = m.knockX * Math.max(0, 1 - kDamp*dt);
+      m.knockY = m.knockY * Math.max(0, 1 - kDamp*dt);
+
+      const dx = Player.x - m.x;
+      const dy = Player.y - m.y;
+      const d = Math.hypot(dx,dy) || 1;
+
+      const desired = (m.kind==="boss") ? 80 : 60;
+      const speed = m.spd * (d > desired ? 1.0 : 0.25);
+
+      const nx = dx / d;
+      const ny = dy / d;
+      const wob = Math.sin(m.phase) * 0.35;
+
+      m.x += (nx * speed + (-ny * wob * 18)) * dt + m.knockX * dt;
+      m.y += (ny * speed + ( nx * wob * 18)) * dt + m.knockY * dt;
+    }
+  }
+
+  // ---------- Buttons ----------
+  bind(btnStage, "스테이지", startStage);
+  bind(btnBoss, "보스", startBoss);
+  bind(btnRespawn, "몹재생성", ()=>{ respawnMobs(); toast("몹 재생성", 800); });
+  bind(btnReset, "리셋", resetAll);
+
+  bind(btnAttack, "공격", ()=> tryAttack("btn"));
+  bind(btnDash, "대시", ()=>{
+    if (Player.dashCd>0){ toast("대시 쿨타임", 500); return; }
+    Player.dashTime = 0.12;
+    Player.dashCd = 0.75;
+    toast("대시!", 500);
+  });
+
+  bind(btnToggleTarget, "오토타겟", ()=>{
+    Game.autoTarget = !Game.autoTarget;
+    btnToggleTarget.classList.toggle("on", Game.autoTarget);
+    toast(`오토 타겟: <b>${Game.autoTarget?"ON":"OFF"}</b>`, 900);
+  });
+  bind(btnToggleAtk, "오토공격", ()=>{
+    Game.autoAttack = !Game.autoAttack;
+    btnToggleAtk.classList.toggle("on", Game.autoAttack);
+    toast(`오토 공격: <b>${Game.autoAttack?"ON":"OFF"}</b>`, 900);
+  });
+
+  bind(btnPick, "줍기", ()=>{
+    toast(Inv.length ? `줍기: <b>${Inv[Inv.length-1].name}</b>` : "줍기: 인벤 비어있음", 900);
+    syncHUD();
+  });
+
+  // ---------- Loop ----------
+  let last = now();
+  let fpsAcc=0, fpsFrames=0;
+
+  function update(dt){
+    Game.stageTime += dt;
+    const left = Math.max(0, Math.ceil(Game.timeLimit - Game.stageTime));
+    const mm = String(Math.floor(left/60)).padStart(2,"0");
+    const ss = String(left%60).padStart(2,"0");
+    timerTxt.textContent = `제한: ${mm}:${ss}`;
+    if (left<=0){ startStage(); return; }
+
+    Player.atkTimer = Math.max(0, Player.atkTimer - dt);
+
+    const mx = Joy.active ? Joy.x : 0;
+    const my = Joy.active ? Joy.y : 0;
+    const mlen = Math.hypot(mx,my);
+
+    Player.dashTime = Math.max(0, Player.dashTime - dt);
+    Player.dashCd   = Math.max(0, Player.dashCd - dt);
+    const spd = Player.spd * (Player.dashTime>0 ? 2.4 : 1.0);
+
+    const nx = mlen>1e-6 ? mx/mlen : 0;
+    const ny = mlen>1e-6 ? my/mlen : 0;
+
+    Player.x += nx * spd * dt;
+    Player.y += ny * spd * dt;
+
+    moveMobs(dt);
+    resolvePlayerMobCollisions();
+
+    // 죽은 몹 제거
+    for (let i=Mobs.length-1;i>=0;i--){
+      if (Mobs[i].hp<=0) Mobs.splice(i,1);
+    }
+
+    // 오토 공격
+    if (Game.autoAttack){
+      const t = nearestMobInRange(Player.atkRange);
+      if (t && Player.atkTimer<=0) tryAttack("auto");
+    }
+  }
+
+  function draw(){
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+
+    ctx.clearRect(0,0,w,h);
+    drawBg(w,h);
+
+    ctx.save();
+    ctx.translate(w/2, h/2);
+
+    // 몬스터 + HP바
+    for (const m of Mobs){
+      drawSpriteOrCircle(m.kind, m.x, m.y, m.r);
+
+      const barW = Math.max(34, m.r*2.2);
+      const barH = 6;
+      const bx = m.x - barW/2;
+      const by = m.y - m.r - 14;
+
+      ctx.fillStyle = "rgba(0,0,0,0.45)";
+      ctx.fillRect(bx, by, barW, barH);
+
+      const hpRatio = m.hpMax>0 ? (m.hp/m.hpMax) : 0;
+      ctx.fillStyle = "rgba(255,255,255,0.78)";
+      ctx.fillRect(bx, by, barW*hpRatio, barH);
+
+      ctx.strokeStyle = "rgba(255,255,255,0.18)";
+      ctx.strokeRect(bx, by, barW, barH);
+    }
+
+    // 플레이어
+    drawSpriteOrCircle("player", Player.x, Player.y, Player.r);
+
+    // 공격 범위(희미)
+    ctx.strokeStyle = "rgba(255,255,255,0.10)";
+    ctx.beginPath();
+    ctx.arc(Player.x, Player.y, Player.atkRange, 0, Math.PI*2);
+    ctx.stroke();
+
+    ctx.restore();
+  }
+
+  function loop(){
+    const t = now();
+    let dt = (t - last)/1000;
     last = t;
+    dt = Math.min(0.05, Math.max(0, dt));
 
-    state.t += dt;
+    fpsAcc += dt; fpsFrames++;
+    if (fpsAcc >= 0.4){
+      const fps = Math.round(fpsFrames / fpsAcc);
+      fpsAcc = 0; fpsFrames = 0;
+      fpsTxt.textContent = `FPS: ${fps}`;
+    }
 
-    if (state.gs === "PLAY") updatePlay(state, dt);
-
-    state.updatedAt = isoNow();
-    if (Math.random() < 0.03) save(state);
-
-    ctx.clearRect(0,0,VIEW_W,VIEW_H);
-
-    if (state.gs === "MENU") drawMenu(state);
-    else if (state.gs === "OPTIONS") drawOptions(state);
-    else if (state.gs === "PAUSE") drawPause(state);
-    else if (state.gs === "INVENTORY") drawInventory(state);
-    else if (state.gs === "SHOP") drawShop(state);
-    else if (state.gs === "EXIT") drawExitScreen();
-    else drawScene(state);
-
-    pointer.clicked = false;
+    update(dt);
+    draw();
+    updateToasts();
     requestAnimationFrame(loop);
   }
-  requestAnimationFrame(loop);
+
+  // ---------- Start ----------
+  syncHUD();
+  toast("<b>v4.5 로딩</b>…", 900);
+
+  preloadAssets().finally(()=>{
+    startStage();
+    toast("이미지는 <b>확장자 자동 탐색</b>으로 로드됨", 1400);
+    loop();
+  });
 
 })();
 </script>
