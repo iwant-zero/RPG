@@ -16,12 +16,7 @@
       user-select: none;
       font-family: system-ui, -apple-system, Segoe UI, Roboto, Apple SD Gothic Neo, Noto Sans KR, sans-serif;
     }
-    #wrap {
-      height: 100%;
-      display: grid;
-      place-items: center;
-    }
-    /* 게임은 고정 해상도 960x540을 "비율 유지"로 보여줌 */
+    #wrap { height: 100%; display: grid; place-items: center; }
     #stage {
       position: relative;
       width: min(100vw, calc(100vh * 16 / 9));
@@ -33,32 +28,19 @@
       box-shadow: 0 10px 40px rgba(0,0,0,.45);
       overflow: hidden;
     }
-    canvas#game {
-      width: 100%;
-      height: 100%;
-      display: block;
-      background: #050812;
-    }
+    canvas#game { width: 100%; height: 100%; display: block; background: #050812; }
 
-    /* 모바일 터치 패드 */
-    #touch {
-      position: absolute;
-      inset: 0;
-      pointer-events: none;
-    }
+    #touch { position: absolute; inset: 0; pointer-events: none; }
     .btn {
       pointer-events: auto;
       position: absolute;
-      width: 62px;
-      height: 62px;
+      width: 62px; height: 62px;
       border-radius: 16px;
-      display: grid;
-      place-items: center;
+      display: grid; place-items: center;
       background: rgba(255,255,255,0.08);
       border: 1px solid rgba(255,255,255,0.14);
       color: rgba(235,240,255,0.92);
-      font-weight: 900;
-      font-size: 18px;
+      font-weight: 900; font-size: 18px;
       -webkit-tap-highlight-color: transparent;
       user-select: none;
       touch-action: none;
@@ -68,14 +50,11 @@
       background: rgba(91,140,255,0.20);
       border-color: rgba(91,140,255,0.55);
     }
-    /* 좌측 */
     #b-left { left: 16px; bottom: 22px; }
     #b-right { left: 92px; bottom: 22px; }
-    /* 우측 */
     #b-jump { right: 16px; bottom: 96px; width: 70px; height: 70px; border-radius: 18px; font-size: 18px; }
     #b-atk { right: 96px; bottom: 22px; }
     #b-skill { right: 16px; bottom: 22px; }
-    /* 메뉴(모바일) */
     #b-menu { right: 16px; top: 16px; width: 54px; height: 54px; border-radius: 14px; font-size: 18px; }
   </style>
 </head>
@@ -84,7 +63,6 @@
   <div id="wrap">
     <div id="stage">
       <canvas id="game" width="960" height="540"></canvas>
-
       <div id="touch" aria-hidden="true">
         <div class="btn" id="b-left" data-k="left">◀</div>
         <div class="btn" id="b-right" data-k="right">▶</div>
@@ -103,22 +81,20 @@
   "use strict";
 
   // ============================================================
-  // BOSS GATE - Canvas2D "복붙 완전체" (index.html 단일 파일)
+  // BOSS GATE - Canvas2D (index.html 단일 파일 / 복붙 완전체)
   //
-  // ✅ 공격/스킬(Z/X) 때 몬스터와 겹쳐도 '점프(튕김)'처럼 안 됨
-  //    - 공격/스킬 중 잠깐 contactGuard 활성화 → 접촉 피격/넉백 무시
-  //
-  // ✅ 화면 세로(위/아래) 흔들림 완전 제거
-  //    - cam.y는 CAM_Y 고정값 (점프/충돌해도 Y 변동 없음)
-  //
-  // ✅ BGM/SFX를 MP4로 교체 가능 (코드 수정 없이 파일명만 맞추면 됨)
-  //    /assets/bgm.mp4
-  //    /assets/sfx_hit.mp4
-  //    /assets/sfx_coin.mp4
-  //
+  // ✅ 공격/스킬(Z/X) 중 접촉 피격(튕김) 방지(contactGuard)
+  // ✅ 카메라 Y 완전 고정(위/아래 흔들림 제거)
   // ✅ HUD ⚙ + 모바일 ⚙ 메뉴 버튼
-  // ✅ 메뉴에서 "게임 종료(완전 탈출)" 즉시 빠져나감(about:blank)
+  // ✅ 메뉴의 게임 종료 → about:blank로 완전 탈출
   //
+  // ✅ 오디오 자동 선택(확장자 자동):
+  //   /assets/bgm.(m4a|mp3|mp4)
+  //   /assets/sfx_hit.(m4a|mp3|mp4)
+  //   /assets/sfx_coin.(m4a|mp3|mp4)
+  //
+  // - 여러 개 넣어도 됨. 존재 + 재생가능 포맷을 자동 선택.
+  // - 모바일은 정책상 "첫 탭/키입력" 이후 재생 가능(코드에 unlock 포함).
   // ============================================================
 
   // -------------------- Canvas --------------------
@@ -147,9 +123,7 @@
   const dist = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by);
   const isoNow = () => new Date().toISOString();
   const lerp = (a,b,t)=>a+(b-a)*t;
-  function smoothFactor(dt, sharpness=18){
-    return 1 - Math.pow(0.001, dt*sharpness);
-  }
+  function smoothFactor(dt, sharpness=18){ return 1 - Math.pow(0.001, dt*sharpness); }
 
   // -------------------- Prevent scroll by keys --------------------
   window.addEventListener("keydown", (e) => {
@@ -161,7 +135,7 @@
   }, { passive:false });
 
   // -------------------- Save --------------------
-  const SAVE_KEY = "boss_gate_web_v3_fullpaste";
+  const SAVE_KEY = "boss_gate_web_v4_auto_audio";
   function save(state) { try { localStorage.setItem(SAVE_KEY, JSON.stringify(state)); } catch {} }
   function load() {
     try {
@@ -174,27 +148,132 @@
   // -------------------- Game States --------------------
   const GS = { MENU:"MENU", OPTIONS:"OPTIONS", PLAY:"PLAY", PAUSE:"PAUSE", INVENTORY:"INVENTORY", EXIT:"EXIT" };
 
-  // -------------------- Audio (MP4 교체형) --------------------
-  // ✅ 여기 파일명은 고정: /assets/bgm.mp4 /assets/sfx_hit.mp4 /assets/sfx_coin.mp4
-  // 너는 '이름만' 맞춰 넣으면 코드 수정 없이 바뀜.
+  // -------------------- Audio (확장자 자동 선택) --------------------
   class AudioMan {
     constructor() {
       this.ctx = null; this.master=null; this.bgmGain=null; this.sfxGain=null;
       this.unlocked = false;
       this.muted = false; this.bgmOn = true; this.sfxOn = true;
 
-      // ✅ MP4 파일을 그대로 재생 시도
-      this.files = {
-        bgm: new Audio("./assets/bgm.mp4"),
-        hit: new Audio("./assets/sfx_hit.mp4"),
-        coin: new Audio("./assets/sfx_coin.mp4")
+      // ✅ basename만 고정, 확장자는 자동 선택
+      this._bases = {
+        bgm:  "./assets/bgm",
+        hit:  "./assets/sfx_hit",
+        coin: "./assets/sfx_coin",
       };
+
+      // 선호 순서: m4a(모바일 안정) > mp3(범용) > mp4(환경에 따라)
+      this._exts = [".m4a", ".mp3", ".mp4"];
+
+      // 실제 Audio 엘리먼트는 1개씩 유지(소스만 교체)
+      this.files = {
+        bgm:  new Audio(),
+        hit:  new Audio(),
+        coin: new Audio(),
+      };
+      this.files.bgm.loop = true;
+
       for (const k of Object.keys(this.files)) {
-        this.files[k].preload = "auto";
-        this.files[k].loop = (k === "bgm");
-        this.files[k].volume = 0.65;
+        const a = this.files[k];
+        a.preload = "auto";
+        a.volume = (k === "bgm") ? 0.55 : 0.65;
       }
+
+      // 선택된 URL 기록
+      this._picked = { bgm:null, hit:null, coin:null };
+
+      // 부팅 시(조용히) 가능한 후보를 미리 찾아둠
+      // (없어도 괜찮고, 나중에 play 시점에 다시 시도함)
+      this.preResolveAll().catch(()=>{});
     }
+
+    // 브라우저가 지원하는 타입 점수(2=probably, 1=maybe, 0=불가)
+    _scoreCanPlay(ext){
+      const test = document.createElement("audio");
+      const map = {
+        ".mp3": ["audio/mpeg"],
+        ".m4a": ["audio/mp4", "audio/aac"],
+        ".mp4": ["audio/mp4", "video/mp4"],
+      };
+      const mimes = map[ext] || [];
+      let best = 0;
+      for (const m of mimes){
+        const r = test.canPlayType(m);
+        if (r === "probably") best = Math.max(best, 2);
+        else if (r === "maybe") best = Math.max(best, 1);
+      }
+      return best;
+    }
+
+    // 같은 basename의 후보를 "지원 점수 + 선호 순서"로 정렬
+    _candidateUrls(base){
+      const scored = this._exts.map((ext, idx) => ({
+        url: base + ext,
+        ext,
+        score: this._scoreCanPlay(ext),
+        idx
+      }))
+      // score(높은 게 우선) -> 선호 idx(낮은 게 우선)
+      .sort((a,b)=> (b.score - a.score) || (a.idx - b.idx));
+
+      // 지원이 0인 건 뒤로 보내되 완전 제외는 안 함(환경 특이 케이스 방지)
+      return scored.map(x=>x.url);
+    }
+
+    async _exists(url){
+      // GitHub Pages는 HEAD가 잘 됨. 실패하면 GET로 한 번 더.
+      try {
+        const r = await fetch(url, { method:"HEAD", cache:"no-cache" });
+        if (r.ok) return true;
+      } catch {}
+      try {
+        const r2 = await fetch(url, { method:"GET", cache:"no-cache" });
+        return r2.ok;
+      } catch {}
+      return false;
+    }
+
+    async resolve(key){
+      // 이미 골랐으면 그대로 사용
+      if (this._picked[key]) return this._picked[key];
+
+      const base = this._bases[key];
+      const urls = this._candidateUrls(base);
+
+      for (const url of urls){
+        if (await this._exists(url)) {
+          this._picked[key] = url;
+          this._applySource(key, url);
+          return url;
+        }
+      }
+
+      // 아무 것도 없으면 첫 후보를 임시로 걸어 둔다(나중에 파일 추가되면 다시 resolve)
+      const fallback = urls[0] || (base + ".mp3");
+      this._picked[key] = fallback;
+      this._applySource(key, fallback);
+      return fallback;
+    }
+
+    _applySource(key, url){
+      const a = this.files[key];
+      if (!a) return;
+      // 같은 소스면 유지
+      if (a.src && a.src.endsWith(url)) return;
+      a.src = url;
+      // BGM은 loop 유지
+      if (key === "bgm") a.loop = true;
+      a.load();
+    }
+
+    async preResolveAll(){
+      await Promise.all([
+        this.resolve("bgm"),
+        this.resolve("hit"),
+        this.resolve("coin"),
+      ]);
+    }
+
     ensureCtx() {
       if (this.ctx) return;
       const AC = window.AudioContext || window.webkitAudioContext;
@@ -210,13 +289,14 @@
       this.bgmGain.gain.value = 0.45;
       this.sfxGain.gain.value = 0.75;
     }
+
     async unlock() {
       if (this.unlocked) return;
       this.ensureCtx();
       try { if (this.ctx && this.ctx.state !== "running") await this.ctx.resume(); } catch {}
       this.unlocked = true;
 
-      // 모바일 “첫 탭/입력” 언락용 미세 소리
+      // 모바일 언락용 미세 소리
       if (this.ctx) {
         const o = this.ctx.createOscillator();
         const g = this.ctx.createGain();
@@ -225,11 +305,13 @@
         o.start(); o.stop(this.ctx.currentTime + 0.02);
       }
     }
+
     setMuted(v) {
       this.muted = v;
       if (this.master) this.master.gain.value = v ? 0 : 0.9;
       for (const a of Object.values(this.files)) a.muted = v;
     }
+
     beep(freq, dur, type="square", vol=0.2) {
       if (!this.sfxOn || this.muted) return;
       this.ensureCtx();
@@ -245,42 +327,45 @@
       o.connect(g); g.connect(this.sfxGain);
       o.start(t0); o.stop(t0 + dur + 0.02);
     }
-    playHit() {
-      if (!this.sfxOn || this.muted) return;
-      const a = this.files.hit;
-      a.currentTime = 0;
-      a.play().catch(() => {
-        this.beep(220, 0.06, "square", 0.18);
-        this.beep(120, 0.08, "triangle", 0.12);
-      });
+
+    async _safePlay(key, fallbackBeep){
+      if (this.muted) return false;
+      await this.resolve(key); // 파일이 뭔지 자동 선택
+
+      const a = this.files[key];
+      try {
+        a.currentTime = 0;
+        await a.play();
+        return true;
+      } catch {
+        // 선택한 파일이 실제로 재생 불가할 수도 있으니(기기/코덱)
+        // 다음 후보로 한 번 더 갈아타서 재시도
+        this._picked[key] = null; // 리셋 후 다시 resolve
+        await this.resolve(key);
+        try {
+          a.currentTime = 0;
+          await a.play();
+          return true;
+        } catch {
+          if (fallbackBeep) fallbackBeep();
+          return false;
+        }
+      }
     }
-    playCoin() {
-      if (!this.sfxOn || this.muted) return;
-      const a = this.files.coin;
-      a.currentTime = 0;
-      a.play().catch(() => {
-        this.beep(880, 0.05, "triangle", 0.12);
-        this.beep(1320, 0.06, "sine", 0.10);
-      });
-    }
-    startBgm() {
+
+    async startBgm() {
       if (!this.bgmOn || this.muted) return;
-      const bgm = this.files.bgm;
-      bgm.volume = 0.55;
-      bgm.loop = true;
-      bgm.play().catch(() => {
-        // 실패 시 간단한 합성 BGM 대체
+      const ok = await this._safePlay("bgm", () => {
+        // 합성 BGM 대체
         this.ensureCtx();
         if (!this.ctx) return;
         if (this._bgmNode) return;
-
         const t0 = this.ctx.currentTime;
         const o = this.ctx.createOscillator();
         const g = this.ctx.createGain();
         o.type = "sine";
         g.gain.value = 0.0001;
         o.connect(g); g.connect(this.bgmGain);
-
         const notes = [220, 277.18, 329.63, 392.0, 329.63, 277.18];
         for (let i=0;i<999;i++){
           const f = notes[i % notes.length] * (i % 12 === 0 ? 0.5 : 1);
@@ -290,21 +375,44 @@
         o.start(t0);
         this._bgmNode = { o, g };
       });
+      if (ok) {
+        const bgm = this.files.bgm;
+        bgm.loop = true;
+        bgm.volume = 0.55;
+      }
     }
+
     stopBgm() {
       const bgm = this.files.bgm;
-      bgm.pause(); bgm.currentTime = 0;
+      try { bgm.pause(); bgm.currentTime = 0; } catch {}
       if (this._bgmNode && this.ctx) {
         try { this._bgmNode.o.stop(); } catch {}
         this._bgmNode = null;
       }
     }
+
+    async playHit() {
+      if (!this.sfxOn || this.muted) return;
+      await this._safePlay("hit", () => {
+        this.beep(220, 0.06, "square", 0.18);
+        this.beep(120, 0.08, "triangle", 0.12);
+      });
+    }
+
+    async playCoin() {
+      if (!this.sfxOn || this.muted) return;
+      await this._safePlay("coin", () => {
+        this.beep(880, 0.05, "triangle", 0.12);
+        this.beep(1320, 0.06, "sine", 0.10);
+      });
+    }
   }
 
   const audio = new AudioMan();
+
   const unlockOnce = async () => {
     await audio.unlock();
-    audio.startBgm();
+    await audio.startBgm();
     window.removeEventListener("pointerdown", unlockOnce);
     window.removeEventListener("keydown", unlockOnce);
   };
@@ -542,8 +650,6 @@
   // -------------------- World/Stage --------------------
   const WORLD = { w: 4200, h: 1200 };
   const GROUND_Y = 860;
-
-  // ✅ 세로 카메라 고정값: 바닥이 화면 하단 근처에 오도록
   const GROUND_SCREEN_Y = VIEW_H - 80;
   const CAM_Y = Math.max(0, GROUND_Y - GROUND_SCREEN_Y);
 
@@ -711,7 +817,6 @@
       this.skillCd = 0;
       this.inv = 0;
 
-      // ✅ 핵심: 공격/스킬 중 접촉 피격(튕김) 방지 타이머
       this.contactGuard = 0;
 
       this.anim = "idle";
@@ -873,7 +978,7 @@
   function freshState(){
     const p = new Player();
     return {
-      ver: 3,
+      ver: 4,
       game: "보스게이트 (BOSS GATE)",
       createdAt: isoNow(),
       updatedAt: isoNow(),
@@ -928,7 +1033,6 @@
     state.killed = 0;
     state.goalKills = isBossStage(si) ? 1 : clamp(8 + Math.floor(si*0.7), 8, 18);
 
-    // 화면에 바로 보이도록 바닥 근처에서 시작
     state.player.x = 220;
     state.player.y = GROUND_Y - 120;
     state.player.vx = 0; state.player.vy = 0;
@@ -1026,7 +1130,7 @@
     ent.y = clamp(ent.y, 40, WORLD.h - 40);
   }
 
-  // -------------------- Camera / Background --------------------
+  // -------------------- Background --------------------
   function drawBackground(){
     if (IMG.bg.ok) {
       const img = IMG.bg.img;
@@ -1054,8 +1158,6 @@
     p.atkCd = Math.max(0, p.atkCd - dt);
     p.skillCd = Math.max(0, p.skillCd - dt);
     p.inv = Math.max(0, p.inv - dt);
-
-    // ✅ contactGuard 감소
     p.contactGuard = Math.max(0, p.contactGuard - dt);
 
     const ax = moveAxis();
@@ -1083,8 +1185,6 @@
     if (pressed.atk && p.atkCd <= 0) {
       p.atkCd = 0.30;
       p.anim = "attack"; p.animT = 0;
-
-      // ✅ 공격 중 잠깐 접촉피격(튕김) 차단
       p.contactGuard = Math.max(p.contactGuard, 0.22);
 
       const hx = p.x + p.face * 46;
@@ -1107,8 +1207,7 @@
           ));
 
           if (e.hp <= 0) {
-            e.dead = true;
-            e.dieT = 0;
+            e.dead = true; e.dieT = 0;
             dropRewards(state, e);
             state.killed++;
             p.kills++;
@@ -1124,8 +1223,6 @@
       p.skillCd = 2.8;
       p.atkCd = 0.42;
       p.anim = "attack"; p.animT = 0;
-
-      // ✅ 스킬 중 잠깐 접촉피격(튕김) 차단(조금 더 길게)
       p.contactGuard = Math.max(p.contactGuard, 0.30);
 
       const hx = p.x + p.face * 78;
@@ -1146,8 +1243,7 @@
           ));
 
           if (e.hp <= 0) {
-            e.dead = true;
-            e.dieT = 0;
+            e.dead = true; e.dieT = 0;
             dropRewards(state, e);
             state.killed++;
             p.kills++;
@@ -1175,7 +1271,7 @@
       e.vy += 1100 * dt;
       collidePlatforms(e, state.platforms);
 
-      // ✅ 플레이어 충돌 데미지 (공격/스킬 중엔 접촉피격/튕김 무시)
+      // 플레이어 접촉 피격(공격/스킬 중엔 무시)
       if (p.inv <= 0 && p.contactGuard <= 0 &&
           aabb(p.x - p.w/2, p.y - p.h/2, p.w, p.h, e.x - e.w/2, e.y - e.h/2, e.w, e.h)) {
         const { dmg } = damageCalc(e.atk, d.def, 0, 1);
@@ -1184,7 +1280,6 @@
         audio.playHit();
         state.dmgText.push(new DamageText(p.x, p.y - 64, `-${dmg}`, "rgba(255,91,110,0.95)"));
 
-        // (원래 튕김 연출)
         p.vy = -220;
         p.x += -e.face * 42;
 
@@ -1272,10 +1367,10 @@
 
     if (state.msgT > 0) state.msgT -= dt;
 
-    // ✅ 카메라: 세로는 완전 고정
+    // 카메라: 세로 고정
     cam.y = CAM_Y;
 
-    // ✅ 가로 카메라: 부드럽게 따라가기
+    // 카메라: 가로 부드럽게
     const targetX = clamp(p.x - VIEW_W*0.45, 0, WORLD.w - VIEW_W);
     state.camX = lerp(state.camX, targetX, smoothFactor(dt, 18));
     cam.x = state.camX;
@@ -1283,10 +1378,7 @@
     // HUD ⚙ 메뉴 버튼 클릭 → 일시정지
     const hotGear = (pointer.x>=HUD_MENU_BTN.x && pointer.x<=HUD_MENU_BTN.x+HUD_MENU_BTN.w &&
                      pointer.y>=HUD_MENU_BTN.y && pointer.y<=HUD_MENU_BTN.y+HUD_MENU_BTN.h);
-    if (pointer.clicked && hotGear) {
-      state.gs = "PAUSE";
-      save(state);
-    }
+    if (pointer.clicked && hotGear) { state.gs = "PAUSE"; save(state); }
 
     if (pressed.menu) { pressed.menu = false; state.gs = "PAUSE"; save(state); return; }
     if (pressed.inv)  { pressed.inv  = false; state.gs = "INVENTORY"; save(state); return; }
@@ -1420,7 +1512,6 @@
 
   function drawMenu(state){
     drawBackground();
-
     const px = VIEW_W*0.5-260, py = VIEW_H*0.5-190;
     panel(px, py, 520, 380, " ");
     drawBossGateLogo(VIEW_W*0.5, VIEW_H*0.5-110, state.t);
@@ -1487,7 +1578,6 @@
 
   function drawScene(state, dim=false){
     drawBackground();
-
     drawPlatforms(state.platforms);
     if (state.door) drawDoor(state.door);
     drawCoins(state.coins);
@@ -1524,7 +1614,6 @@
       ctx.fillStyle = "rgba(0,0,0,0.35)";
       ctx.fillRect(0,0,VIEW_W,VIEW_H);
     }
-
     drawHud(state);
   }
 
@@ -1535,8 +1624,7 @@
 
   function drawPause(state){
     drawScene(state, true);
-
-    panel(VIEW_W*0.5-260, VIEW_H*0.5-190, 520, 400, "일시정지 / 메뉴 (BOSS GATE)");
+    panel(VIEW_W*0.5-260, VIEW_H*0.5-190, 520, 400, "일시정지 / 메뉴");
 
     const bx = VIEW_W*0.5-180, by = VIEW_H*0.5-120, bw=360, bh=52;
 
@@ -1550,39 +1638,23 @@
     if (hitBtn(bx,by,bw,bh)) state.gs = "PLAY";
     if (hitBtn(bx,by+64,bw,bh)) state.gs = "INVENTORY";
     if (hitBtn(bx,by+128,bw,bh)) state.gs = "OPTIONS";
-
-    if (hitBtn(bx,by+192,bw,bh)) {
-      save(state);
-      state.gs = "MENU";
-      state.msg = "저장 완료. 타이틀로 이동.";
-      state.msgT = 1.5;
-    }
-
-    if (hitBtn(bx,by+256,bw,bh)) {
-      localStorage.removeItem(SAVE_KEY);
-      state.msg = "저장 삭제 완료.";
-      state.msgT = 1.5;
-    }
-
-    if (hitBtn(bx,by+320,bw,bh)) {
-      hardExitNow();
-      state.gs = "EXIT";
-    }
+    if (hitBtn(bx,by+192,bw,bh)) { save(state); state.gs="MENU"; state.msg="저장 완료. 타이틀로 이동."; state.msgT=1.5; }
+    if (hitBtn(bx,by+256,bw,bh)) { localStorage.removeItem(SAVE_KEY); state.msg="저장 삭제 완료."; state.msgT=1.5; }
+    if (hitBtn(bx,by+320,bw,bh)) { hardExitNow(); state.gs="EXIT"; }
 
     if (pressed.menu) { pressed.menu = false; state.gs = "PLAY"; }
   }
 
   function drawInventory(state){
     drawScene(state, true);
-
-    panel(VIEW_W*0.5-370, VIEW_H*0.5-230, 740, 460, "보스게이트 인벤토리 / 장비(미감정→감정)");
+    panel(VIEW_W*0.5-370, VIEW_H*0.5-230, 740, 460, "인벤토리 / 장비(감정)");
 
     const p = state.player;
     const d = p.derived();
 
     ctx.fillStyle = "rgba(235,240,255,0.75)";
     ctx.font = "13px ui-monospace, Menlo, Consolas";
-    ctx.fillText(`BOSS GATE | STAGE ${stageLabel(state.stageIndex)} | GOLD ${p.gold}G | HP ${p.hp}/${d.hpMax}`, VIEW_W*0.5-340, VIEW_H*0.5-188);
+    ctx.fillText(`STAGE ${stageLabel(state.stageIndex)} | GOLD ${p.gold}G | HP ${p.hp}/${d.hpMax}`, VIEW_W*0.5-340, VIEW_H*0.5-188);
 
     const ex = VIEW_W*0.5-340, ey=VIEW_H*0.5-162;
     ctx.fillStyle = "rgba(255,255,255,0.08)";
@@ -1639,12 +1711,7 @@
     btn(bx+360, by, bw, bh, "뽑기(골드)", false);
     btn(bx+540, by, bw, bh, "닫기(I)", true);
 
-    if (hitBtn(bx,by,bw,bh)) {
-      p.autoEquipBest();
-      state.msg = "자동 장착 완료.";
-      state.msgT = 1.2;
-      save(state);
-    }
+    if (hitBtn(bx,by,bw,bh)) { p.autoEquipBest(); state.msg="자동 장착 완료."; state.msgT=1.2; save(state); }
 
     if (hitBtn(bx+180,by,bw,bh)) {
       const targets = p.invItems.filter(it => !it.identified);
@@ -1654,8 +1721,7 @@
         for (const it of targets) {
           const cost = 40 + it.ilvl*6 + (it.rar==="SSR"?120:it.rar==="SR"?70:it.rar==="R"?45:0);
           if (p.gold < cost) break;
-          p.gold -= cost;
-          spent += cost;
+          p.gold -= cost; spent += cost;
           if (appraise(it)) done++;
         }
         state.msg = done>0 ? `감정 ${done}개 완료 (-${spent}G)` : "골드 부족으로 감정 실패.";
@@ -1677,9 +1743,8 @@
     }
 
     if (hitBtn(bx+540,by,bw,bh)) state.gs = "PLAY";
-
-    if (pressed.inv)  { pressed.inv=false; state.gs = "PLAY"; }
-    if (pressed.menu) { pressed.menu=false; state.gs = "PAUSE"; }
+    if (pressed.inv)  { pressed.inv=false; state.gs="PLAY"; }
+    if (pressed.menu) { pressed.menu=false; state.gs="PAUSE"; }
   }
 
   function drawExitScreen(){
@@ -1688,7 +1753,7 @@
     ctx.fillStyle = "rgba(235,240,255,0.92)";
     ctx.font = "900 28px system-ui, -apple-system, Segoe UI";
     ctx.textAlign = "center";
-    ctx.fillText("BOSS GATE 종료", VIEW_W/2, VIEW_H/2 - 10);
+    ctx.fillText("게임 종료", VIEW_W/2, VIEW_H/2 - 10);
     ctx.font = "14px system-ui, -apple-system, Segoe UI";
     ctx.fillStyle = "rgba(235,240,255,0.70)";
     ctx.fillText("브라우저가 탭 닫기를 막으면 빈 화면으로 이동합니다.", VIEW_W/2, VIEW_H/2 + 24);
