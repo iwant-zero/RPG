@@ -16,18 +16,23 @@
       user-select: none;
       font-family: system-ui, -apple-system, Segoe UI, Roboto, Apple SD Gothic Neo, Noto Sans KR, sans-serif;
     }
-    #wrap { height: 100%; display: grid; place-items: center; }
+
+    /* ✅ 모바일 주소창/툴바 변화로 인한 vh 흔들림 완화 */
+    #wrap { height: 100dvh; display: grid; place-items: center; }
+
+    /* ✅ aspect-ratio로 화면 크기 계산 흔들림(1px 왔다갔다) 완화 */
     #stage {
       position: relative;
-      width: min(100vw, calc(100vh * 16 / 9));
-      height: min(100vh, calc(100vw * 9 / 16));
-      max-width: 960px;
-      max-height: 540px;
+      width: min(100vw, 960px);
+      aspect-ratio: 16 / 9;
+      height: auto;
+      max-height: min(100dvh, 540px);
       background: #050812;
       border-radius: 14px;
       box-shadow: 0 10px 40px rgba(0,0,0,.45);
       overflow: hidden;
     }
+
     canvas#game { width: 100%; height: 100%; display: block; background: #050812; }
 
     #touch { position: absolute; inset: 0; pointer-events: none; }
@@ -85,19 +90,56 @@
 
   const canvas = document.getElementById("game");
   const ctx = canvas.getContext("2d", { alpha: false });
+  const stageEl = document.getElementById("stage");
 
   const VIEW_W = 960;
   const VIEW_H = 540;
 
+  /* =========================
+     ✅ 떨림(겹쳐보임) 해결 핵심:
+     - CSS로 보이는 실제 크기(#stage px)에 맞춰 canvas buffer를 맞춤
+     - 1px 미세변동을 정수화 + ResizeObserver로 추적
+     ========================= */
   function getDpr() { return Math.max(1, Math.min(2.5, window.devicePixelRatio || 1)); }
+
   function resize() {
+    if (!stageEl) return;
+
+    const rect = stageEl.getBoundingClientRect();
+
+    // 표시 크기(px)를 "정수"로 고정해 미세 흔들림 제거
+    const cssW = Math.max(1, Math.round(rect.width));
+    const cssH = Math.max(1, Math.round(rect.height));
+
     const dpr = getDpr();
-    canvas.width = Math.floor(VIEW_W * dpr);
-    canvas.height = Math.floor(VIEW_H * dpr);
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const bufW = Math.floor(cssW * dpr);
+    const bufH = Math.floor(cssH * dpr);
+
+    // 크기 변화 없으면 스킵(불필요한 setTransform 반복 방지)
+    if (canvas.width === bufW && canvas.height === bufH) return;
+
+    canvas.width = bufW;
+    canvas.height = bufH;
+
+    // 논리좌표(960x540)를 현재 버퍼 크기에 매핑
+    const sx = bufW / VIEW_W;
+    const sy = bufH / VIEW_H;
+    ctx.setTransform(sx, 0, 0, sy, 0, 0);
+
     ctx.imageSmoothingEnabled = true;
   }
+
   window.addEventListener("resize", resize, { passive: true });
+
+  // stage의 실제 크기 변화(모바일 주소창 등)도 추적
+  if (window.ResizeObserver && stageEl) {
+    const ro = new ResizeObserver(() => resize());
+    ro.observe(stageEl);
+  } else {
+    // 구형 브라우저 fallback
+    setInterval(resize, 250);
+  }
+
   resize();
 
   const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
@@ -2205,6 +2247,7 @@
     state.updatedAt = isoNow();
     if (Math.random() < 0.03) save(state);
 
+    // transform이 VIEW_W/VIEW_H 기준으로 잡혀 있으므로 이대로 clear해도 전체 지워짐
     ctx.clearRect(0,0,VIEW_W,VIEW_H);
 
     if (state.gs === "MENU") drawMenu(state);
