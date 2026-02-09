@@ -16,23 +16,18 @@
       user-select: none;
       font-family: system-ui, -apple-system, Segoe UI, Roboto, Apple SD Gothic Neo, Noto Sans KR, sans-serif;
     }
-
-    /* ✅ 모바일 주소창/툴바 변화로 인한 vh 흔들림 완화 */
-    #wrap { height: 100dvh; display: grid; place-items: center; }
-
-    /* ✅ aspect-ratio로 화면 크기 계산 흔들림(1px 왔다갔다) 완화 */
+    #wrap { height: 100%; display: grid; place-items: center; }
     #stage {
       position: relative;
-      width: min(100vw, 960px);
-      aspect-ratio: 16 / 9;
-      height: auto;
-      max-height: min(100dvh, 540px);
+      width: min(100vw, calc(100vh * 16 / 9));
+      height: min(100vh, calc(100vw * 9 / 16));
+      max-width: 960px;
+      max-height: 540px;
       background: #050812;
       border-radius: 14px;
       box-shadow: 0 10px 40px rgba(0,0,0,.45);
       overflow: hidden;
     }
-
     canvas#game { width: 100%; height: 100%; display: block; background: #050812; }
 
     #touch { position: absolute; inset: 0; pointer-events: none; }
@@ -90,56 +85,19 @@
 
   const canvas = document.getElementById("game");
   const ctx = canvas.getContext("2d", { alpha: false });
-  const stageEl = document.getElementById("stage");
 
   const VIEW_W = 960;
   const VIEW_H = 540;
 
-  /* =========================
-     ✅ 떨림(겹쳐보임) 해결 핵심:
-     - CSS로 보이는 실제 크기(#stage px)에 맞춰 canvas buffer를 맞춤
-     - 1px 미세변동을 정수화 + ResizeObserver로 추적
-     ========================= */
   function getDpr() { return Math.max(1, Math.min(2.5, window.devicePixelRatio || 1)); }
-
   function resize() {
-    if (!stageEl) return;
-
-    const rect = stageEl.getBoundingClientRect();
-
-    // 표시 크기(px)를 "정수"로 고정해 미세 흔들림 제거
-    const cssW = Math.max(1, Math.round(rect.width));
-    const cssH = Math.max(1, Math.round(rect.height));
-
     const dpr = getDpr();
-    const bufW = Math.floor(cssW * dpr);
-    const bufH = Math.floor(cssH * dpr);
-
-    // 크기 변화 없으면 스킵(불필요한 setTransform 반복 방지)
-    if (canvas.width === bufW && canvas.height === bufH) return;
-
-    canvas.width = bufW;
-    canvas.height = bufH;
-
-    // 논리좌표(960x540)를 현재 버퍼 크기에 매핑
-    const sx = bufW / VIEW_W;
-    const sy = bufH / VIEW_H;
-    ctx.setTransform(sx, 0, 0, sy, 0, 0);
-
+    canvas.width = Math.floor(VIEW_W * dpr);
+    canvas.height = Math.floor(VIEW_H * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.imageSmoothingEnabled = true;
   }
-
   window.addEventListener("resize", resize, { passive: true });
-
-  // stage의 실제 크기 변화(모바일 주소창 등)도 추적
-  if (window.ResizeObserver && stageEl) {
-    const ro = new ResizeObserver(() => resize());
-    ro.observe(stageEl);
-  } else {
-    // 구형 브라우저 fallback
-    setInterval(resize, 250);
-  }
-
   resize();
 
   const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
@@ -429,8 +387,16 @@
 
   window.addEventListener("keyup", (e) => keys.delete(e.key.toLowerCase()), { passive:true });
 
+  // -------------------- Touch overlay --------------------
   const touch = document.getElementById("touch");
   const touchDown = new Set();
+
+  // ✅ PLAY 중에만 터치 버튼을 보여서, 메뉴/옵션/인벤이 가려지는 문제 제거
+  function setTouchVisible(v){
+    if (!touch) return;
+    touch.style.display = v ? "block" : "none";
+  }
+
   function setTouchKey(name, down) {
     if (down) touchDown.add(name);
     else touchDown.delete(name);
@@ -813,11 +779,7 @@
   // ---- Combat ----
   const ATTACK_LOCK_ATK = 0.18;
   const ATTACK_LOCK_SKL = 0.24;
-
-  // ✅ 접촉 피해 쿨타임(연타 중에도 피가 깎이되 과도 연타 방지)
   const CONTACT_DAMAGE_COOLDOWN = 0.22;
-
-  // ---- Overlap stabilize ----
   const CONTACT_SEP_STRENGTH = 0.78;
 
   // ---- Drop ----
@@ -853,8 +815,8 @@
       this.atkCd = 0;
       this.skillCd = 0;
 
-      this.inv = 0;     // 피격 무적
-      this.hitCd = 0;   // ✅ 접촉 피해 쿨타임
+      this.inv = 0;
+      this.hitCd = 0;
       this.attackLock = 0;
 
       this.potions = 3;
@@ -951,8 +913,6 @@
       this.dieT=0;
 
       this.jumpCd = 0;
-
-      // 몬스터 y 튐 방지
       this.groundSnap = true;
     }
   }
@@ -1001,16 +961,6 @@
     ctx.fillText(text, x + (w-tw)/2, y + h/2 + 6);
     ctx.restore();
   }
-  function badge(x,y,text, col="rgba(91,140,255,0.22)", stroke="rgba(91,140,255,0.50)"){
-    ctx.save();
-    ctx.fillStyle = col;
-    ctx.strokeStyle = stroke;
-    roundRect(x,y,64,22,10,true,true);
-    ctx.fillStyle = "rgba(235,240,255,0.92)";
-    ctx.font = "bold 12px ui-monospace, Menlo, Consolas";
-    ctx.fillText(text, x+12, y+16);
-    ctx.restore();
-  }
 
   // HUD 버튼(⚙ + 🧪 + 🎒)
   const HUD_MENU_BTN   = { x: 14+740+10, y: 14,        w: 46, h: 46 };
@@ -1042,6 +992,9 @@
       gs: "MENU", // MENU / PLAY / PAUSE / OPTIONS / INV / EXIT
       opt: { muted:false, bgm:true, sfx:true },
 
+      // ✅ 옵션 화면에서 뒤로 갈 목적지(메뉴에서 들어오면 MENU, 일시정지에서 들어오면 PAUSE)
+      optReturn: "MENU",
+
       player: p,
       stageIndex: 1,
       inBossRoom: false,
@@ -1066,7 +1019,7 @@
       camX: 0,
 
       invSelId: null,
-      invScroll: 0, // ✅ 인벤 스크롤
+      invScroll: 0,
     };
   }
 
@@ -1123,6 +1076,13 @@
     Object.assign(state, fresh);
     rebuildStage(state);
     state.gs = "PLAY";
+    save(state);
+  }
+
+  // ✅ 옵션 화면 열기: 어디서 열었는지 기록
+  function openOptions(state, fromGs){
+    state.optReturn = fromGs || "MENU";
+    state.gs = "OPTIONS";
     save(state);
   }
 
@@ -1497,7 +1457,8 @@
       }
     }
 
-    if (hitBtn(bx,by+128,bw,bh)) state.gs = "OPTIONS";
+    // ✅ 메뉴에서 옵션 열면, 옵션 나가면 메뉴로 복귀
+    if (hitBtn(bx,by+128,bw,bh)) openOptions(state, "MENU");
 
     if (hitBtn(bx,by+192,bw,bh)) {
       localStorage.removeItem(SAVE_KEY);
@@ -1510,6 +1471,15 @@
     ctx.fillText("모바일: 버튼/⚙ 메뉴 / PC: 방향키 + Z/X + Space + H + I", VIEW_W*0.5-240, VIEW_H*0.5+210);
   }
 
+  // ✅ 옵션 화면에서 “뒤로가기”를 원래 화면으로
+  function goBackFromOptions(state){
+    const to = state.optReturn || "MENU";
+    state.gs = to;
+    // 옵션이 PAUSE에서 열렸다면, 바로 PLAY로 가면 헷갈리니 PAUSE로 복귀(원하면 재개 누르게)
+    if (to === "PLAY") state.gs = "PAUSE";
+    save(state);
+  }
+
   function drawOptions(state){
     drawBackground();
     panel(VIEW_W*0.5-260, VIEW_H*0.5-170, 520, 340, "옵션");
@@ -1519,16 +1489,22 @@
     btn(bx, by, bw, bh, `음소거: ${state.opt.muted ? "ON" : "OFF"}`, !state.opt.muted);
     btn(bx, by+64, bw, bh, `BGM: ${state.opt.bgm ? "ON" : "OFF"}`, state.opt.bgm);
     btn(bx, by+128, bw, bh, `SFX: ${state.opt.sfx ? "ON" : "OFF"}`, state.opt.sfx);
-    btn(bx, by+212, bw, bh, "뒤로가기", true);
+    btn(bx, by+212, bw, bh, "뒤로가기(ESC/P/⚙)", true);
 
     if (hitBtn(bx,by,bw,bh)) { state.opt.muted = !state.opt.muted; applyOptions(state); save(state); }
     if (hitBtn(bx,by+64,bw,bh)) { state.opt.bgm = !state.opt.bgm; applyOptions(state); save(state); }
     if (hitBtn(bx,by+128,bw,bh)) { state.opt.sfx = !state.opt.sfx; applyOptions(state); save(state); }
-    if (hitBtn(bx,by+212,bw,bh)) { state.gs = "MENU"; }
+    if (hitBtn(bx,by+212,bw,bh)) { goBackFromOptions(state); }
 
     ctx.fillStyle = "rgba(235,240,255,0.65)";
     ctx.font = "13px system-ui, -apple-system, Segoe UI";
     ctx.fillText("오디오가 안 나면 화면을 한 번 탭/클릭해서 언락해줘.", VIEW_W*0.5-200, VIEW_H*0.5+70);
+
+    // ✅ ESC/P/⚙ (pressed.menu)로도 옵션 빠져나가기 지원
+    if (pressed.menu) {
+      pressed.menu = false;
+      goBackFromOptions(state);
+    }
   }
 
   function drawScene(state, dim=false){
@@ -1599,7 +1575,8 @@
     const items = [
       { t:"재개", hot:true, fn:()=> state.gs="PLAY" },
       { t:"인벤토리(🎒)", hot:false, fn:()=> state.gs="INV" },
-      { t:"옵션", hot:false, fn:()=> state.gs="OPTIONS" },
+      // ✅ PAUSE에서 옵션 열면 돌아올 곳은 PAUSE
+      { t:"옵션", hot:false, fn:()=> openOptions(state, "PAUSE") },
       { t:"저장 후 타이틀로", hot:false, fn:()=> { save(state); state.gs="MENU"; state.msg="저장 완료. 타이틀로 이동."; state.msgT=1.5; } },
       { t:"게임 종료(완전 탈출)", hot:true, fn:()=> { hardExitNow(); state.gs="EXIT"; } },
     ];
@@ -1627,7 +1604,7 @@
     ctx.textAlign = "left";
   }
 
-  // -------------------- INVENTORY (복구) --------------------
+  // -------------------- INVENTORY (원본 유지) --------------------
   function rarColor(r){
     if (r==="SSR") return ["rgba(255,207,91,0.22)","rgba(255,207,91,0.55)"];
     if (r==="SR")  return ["rgba(174,120,255,0.22)","rgba(174,120,255,0.55)"];
@@ -1654,7 +1631,6 @@
     const px = 80, py = 50, pw = 800, ph = 440;
     panel(px, py, pw, ph, "인벤토리");
 
-    // 상단 장착
     const ex = px+20, ey = py+48;
     ctx.fillStyle = "rgba(235,240,255,0.80)";
     ctx.font = "bold 13px ui-monospace, Menlo, Consolas";
@@ -1678,7 +1654,6 @@
       ctx.font = "11px ui-monospace, Menlo, Consolas";
       ctx.fillText(sb.slot.toUpperCase(), sb.x+118, sb.y+22);
 
-      // 장착 해제 버튼(클릭하면 인벤으로)
       const ux = sb.x+128, uy = sb.y+7;
       if (it) {
         ctx.fillStyle = "rgba(255,91,110,0.14)";
@@ -1697,7 +1672,6 @@
       }
     }
 
-    // 우측 상단 버튼들
     const bx = px+pw-20-160, by = py+48, bw=160, bh=34;
     btn(bx, by, bw, bh, "자동장착", true);
     btn(bx, by+40, bw, bh, "정렬", false);
@@ -1722,7 +1696,6 @@
     }
     if (hitBtn(bx,by+120,bw,bh)) { state.gs="PLAY"; save(state); }
 
-    // 리스트 영역
     const listX = px+20;
     const listY = py+100;
     const listW = 520;
@@ -1731,7 +1704,6 @@
     ctx.strokeStyle = "rgba(255,255,255,0.10)";
     roundRect(listX, listY, listW, listH, 12, true, true);
 
-    // 스크롤 처리(마우스 휠)
     if (Math.abs(pointer.wheelY) > 0.1) {
       const over = (pointer.x>=listX && pointer.x<=listX+listW && pointer.y>=listY && pointer.y<=listY+listH);
       if (over){
@@ -1744,11 +1716,9 @@
     const maxScroll = Math.max(0, p.invItems.length * rowH - (listH-12));
     state.invScroll = clamp(state.invScroll, 0, maxScroll);
 
-    // 선택 아이템 찾기
     let sel = null;
     if (state.invSelId) sel = p.invItems.find(it=>it.id===state.invSelId) || null;
 
-    // 리스트 그리기
     ctx.save();
     ctx.beginPath();
     ctx.rect(listX+6, listY+6, listW-12, listH-12);
@@ -1763,19 +1733,17 @@
       const isSel = (sel && sel.id===it.id);
       const ry = y0 + (i-startIdx)*rowH;
 
-      const [fc, sc] = rarColor(it.rar);
       ctx.fillStyle = isSel ? "rgba(91,140,255,0.20)" : "rgba(255,255,255,0.05)";
       ctx.strokeStyle = isSel ? "rgba(91,140,255,0.55)" : "rgba(255,255,255,0.10)";
       roundRect(listX+10, ry, listW-20, rowH-8, 10, true, true);
 
-      // rarity badge
+      const [fc, sc] = rarColor(it.rar);
       ctx.fillStyle = fc; ctx.strokeStyle = sc;
       roundRect(listX+18, ry+10, 56, 22, 10, true, true);
       ctx.fillStyle = "rgba(235,240,255,0.92)";
       ctx.font = "bold 12px ui-monospace, Menlo, Consolas";
       ctx.fillText(it.rar, listX+36, ry+26);
 
-      // text
       ctx.fillStyle = "rgba(235,240,255,0.92)";
       ctx.font = "bold 13px system-ui, -apple-system, Segoe UI";
       ctx.fillText(`${it.name}${it.identified?"":" (미감정)"}`, listX+80, ry+26);
@@ -1784,7 +1752,6 @@
       ctx.font = "12px ui-monospace, Menlo, Consolas";
       ctx.fillText(`${it.slot.toUpperCase()}  iLv ${it.ilvl}  PWR ${itemPow(it)}  판매 ${sellPrice(it)}G`, listX+80, ry+42);
 
-      // 클릭 선택
       const rx = listX+10, rw = listW-20, rh = rowH-8;
       if (hitBtn(rx, ry, rw, rh)){
         state.invSelId = it.id;
@@ -1795,7 +1762,6 @@
 
     ctx.restore();
 
-    // 우측 상세
     const detailX = px+560;
     const detailY = py+210;
     const detailW = 300;
@@ -1828,11 +1794,9 @@
       ctx.font = "12px ui-monospace, Menlo, Consolas";
       ctx.fillText(`${sel.slot.toUpperCase()} | iLv ${sel.ilvl} | PWR ${itemPow(sel)}`, detailX+12, detailY+78);
 
-      // base stats
       const st = sel.stats;
       ctx.fillText(`기본: ATK ${st.atk}  DEF ${st.def}  HP ${st.hp}  CRIT ${st.crit}  SPD ${st.spd}`, detailX+12, detailY+100);
 
-      // affixes
       let yy = detailY+122;
       ctx.fillText(sel.identified ? "옵션:" : "옵션: (감정 필요)", detailX+12, yy);
       yy += 18;
@@ -1852,7 +1816,6 @@
         yy += 16;
       }
 
-      // buttons
       const b1x = detailX+12, b1y = detailY+detailH-110, bW=detailW-24, bH=34;
       btn(b1x, b1y, bW, bH, "장착", true);
       btn(b1x, b1y+40, bW, bH, sel.identified ? "감정 완료" : `감정하기 (${Math.max(20, Math.floor(sellPrice(sel)*0.35))}G)`, !sel.identified);
@@ -1860,12 +1823,11 @@
 
       if (hitBtn(b1x,b1y,bW,bH)) {
         const slot = sel.slot;
-        // 현재 장착은 인벤으로 돌리고, 선택을 장착
         if (p.equip[slot]) p.invItems.push(p.equip[slot]);
         p.equip[slot] = sel;
         p.invItems = p.invItems.filter(it=>it.id!==sel.id);
         state.invSelId = null;
-        p.autoEquipBest(); // 파생치/HP 클램프
+        p.autoEquipBest();
         state.msg = "장착 완료!";
         state.msgT = 1.0;
         save(state);
@@ -1898,12 +1860,10 @@
       }
     }
 
-    // 하단 안내
     ctx.fillStyle = "rgba(235,240,255,0.60)";
     ctx.font = "12px ui-monospace, Menlo, Consolas";
     ctx.fillText("휠 스크롤: 목록 이동 | I/ESC: 닫기 | 🎒 버튼: 인벤", px+20, py+ph-18);
 
-    // 키로 닫기
     if (pressed.inv || pressed.menu) {
       pressed.inv = false;
       pressed.menu = false;
@@ -1920,10 +1880,7 @@
     p.skillCd = Math.max(0, p.skillCd - dt);
 
     p.inv = Math.max(0, p.inv - dt);
-
-    // ✅ 접촉 피해 쿨타임 감소
     p.hitCd = Math.max(0, p.hitCd - dt);
-
     p.attackLock = Math.max(0, p.attackLock - dt);
 
     p.potionCd = Math.max(0, p.potionCd - dt);
@@ -1961,11 +1918,10 @@
     const doAtk = wantAttack();
     const doSkl = wantSkill();
 
-    // Z 공격
     if (doAtk && p.atkCd <= 0) {
       p.atkCd = 0.30;
       p.anim = "attack"; p.animT = 0;
-      p.attackLock = Math.max(p.attackLock, ATTACK_LOCK_ATK);
+      p.attackLock = Math.max(p.attackLock, 0.18);
 
       const hx = p.x + p.face * 46;
       const hy = p.y - 10;
@@ -2003,12 +1959,11 @@
     }
     pressed.atk = false;
 
-    // X 스킬
     if (doSkl && p.skillCd <= 0) {
       p.skillCd = 2.8;
       p.atkCd = 0.42;
       p.anim = "attack"; p.animT = 0;
-      p.attackLock = Math.max(p.attackLock, ATTACK_LOCK_SKL);
+      p.attackLock = Math.max(p.attackLock, 0.24);
 
       const hx = p.x + p.face * 78;
       const hy = p.y - 12;
@@ -2043,7 +1998,6 @@
     }
     pressed.skill = false;
 
-    // 적 AI + 접촉 판정
     for (const e of state.enemies) {
       if (e.dead) { e.dieT += dt; continue; }
       e.hitCd = Math.max(0, e.hitCd - dt);
@@ -2074,13 +2028,12 @@
 
       if (overlapped) stabilizeOverlapNoBounce(state, p, e);
 
-      // ✅ 핵심: 연타 중에도 접촉 피해 들어감(무적+접촉쿨로만 제한)
       if (overlapped && p.inv <= 0 && p.hitCd <= 0) {
         const { dmg } = damageCalc(e.atk, d.def, 0, 1);
 
         p.hp = clamp(p.hp - dmg, 0, d.hpMax);
         p.inv = 0.55;
-        p.hitCd = CONTACT_DAMAGE_COOLDOWN;
+        p.hitCd = 0.22;
         p.noHitT = 0;
 
         audio.playHit();
@@ -2112,7 +2065,6 @@
 
     if (state.killed >= state.goalKills) ensureDoor(state);
 
-    // 코인
     for (let i=state.coins.length-1;i>=0;i--){
       const c = state.coins[i];
       c.t += dt;
@@ -2131,7 +2083,6 @@
       }
     }
 
-    // 루팅
     for (let i=state.loots.length-1;i>=0;i--){
       const l = state.loots[i];
       l.t += dt;
@@ -2151,7 +2102,6 @@
       }
     }
 
-    // 문 진입
     if (state.door) {
       const d0 = state.door;
       if (aabb(p.x - p.w/2, p.y - p.h/2, p.w, p.h, d0.x, d0.y, d0.w, d0.h)) {
@@ -2177,7 +2127,6 @@
     state.camX = lerp(state.camX, targetX, smoothFactor(dt, 18));
     cam.x = state.camX;
 
-    // HUD 클릭(⚙/🧪/🎒)
     const hotGear = (pointer.x>=HUD_MENU_BTN.x && pointer.x<=HUD_MENU_BTN.x+HUD_MENU_BTN.w &&
                      pointer.y>=HUD_MENU_BTN.y && pointer.y<=HUD_MENU_BTN.y+HUD_MENU_BTN.h);
     if (pointer.clicked && hotGear) { state.gs = "PAUSE"; save(state); }
@@ -2198,6 +2147,8 @@
     const st = freshState();
     st.gs = raw.gs || "MENU";
     st.opt = raw.opt || st.opt;
+
+    st.optReturn = raw.optReturn || "MENU";
 
     st.player = new Player();
     Object.assign(st.player, raw.player || {});
@@ -2242,12 +2193,14 @@
 
     state.t += dt;
 
+    // ✅ 상태에 따라 터치 버튼 표시/숨김 (메뉴/옵션/인벤 아래가 가려지는 문제 해결)
+    setTouchVisible(state.gs === "PLAY");
+
     if (state.gs === "PLAY") updatePlay(state, dt);
 
     state.updatedAt = isoNow();
     if (Math.random() < 0.03) save(state);
 
-    // transform이 VIEW_W/VIEW_H 기준으로 잡혀 있으므로 이대로 clear해도 전체 지워짐
     ctx.clearRect(0,0,VIEW_W,VIEW_H);
 
     if (state.gs === "MENU") drawMenu(state);
