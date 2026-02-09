@@ -2,1003 +2,2636 @@
 <html lang="ko">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
-  <title>보스게이트 - v4.5 (자동 확장자 탐색 + 이미지 우선)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+  <title>BOSS GATE</title>
   <style>
     :root{
-      --bg:#070a12;
-      --panel: rgba(12,18,38,0.88);
-      --line: rgba(255,255,255,0.12);
-      --text: rgba(255,255,255,0.92);
-      --muted: rgba(255,255,255,0.65);
-      --good:#6ae37b;
-      --warn:#ffd36a;
-      --bad:#ff6a6a;
-      --btn1:#243a77;
-      --btn2:#1b2a55;
-      --shadow: 0 10px 30px rgba(0,0,0,0.35);
-      --r:18px;
-      --font: ui-sans-serif, system-ui, -apple-system, "Apple SD Gothic Neo", "Noto Sans KR", Segoe UI, Roboto, Arial, sans-serif;
+      --safe-top: env(safe-area-inset-top, 0px);
+      --safe-right: env(safe-area-inset-right, 0px);
+      --safe-bottom: env(safe-area-inset-bottom, 0px);
+      --safe-left: env(safe-area-inset-left, 0px);
+
+      --btn: clamp(44px, 9vw, 66px);
+      --gap: clamp(6px, 1.8vw, 12px);
+
+      --panelW: min(92vw, 420px);
+      --panelH: min(72vh, 560px);
+
+      --hudAlpha: .82;
+      --hudAlphaActive: .95;
     }
 
-    html, body{
+    html, body {
       margin:0; padding:0;
-      width:100%; height:100%;
+      height:100%;
+      background:#000;
+      color:#fff;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, "Noto Sans KR", Arial, sans-serif;
       overflow:hidden;
-      background: var(--bg);
-      color: var(--text);
-      font-family: var(--font);
-      -webkit-tap-highlight-color: transparent;
-      user-select:none;
     }
 
+    /* ====== APP ROOT ====== */
     #app{
-      position:fixed; inset:0;
-      width:100vw; height:100vh;
-      background: radial-gradient(1200px 900px at 30% 20%, #121b3a 0%, #070a12 55%, #050610 100%);
-      overflow:hidden;
-      touch-action:none;
+      position:fixed;
+      inset:0;
+      background:#000;
     }
 
-    #cv{
-      position:absolute; inset:0;
-      width:100%; height:100%;
+    /* ====== CANVAS WRAP (fixed / no layout shift) ====== */
+    #canvasWrap{
+      position:absolute;
+      inset:0;
+      display:grid;
+      place-items:center;
+      background:#000;
+    }
+
+    canvas{
       display:block;
-      background: transparent;
-      pointer-events:none;
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+      background:#000;
+      touch-action: none; /* important: avoid scroll/jitter */
     }
 
-    #hud{
-      position:absolute; inset:0;
-      pointer-events:auto;
-      padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    /* ====== MENU / OVERLAYS ====== */
+    .overlay{
+      position:fixed;
+      inset:0;
+      z-index:90;
+      display:none;
+      background: radial-gradient(1200px 700px at 50% 20%, rgba(40,40,70,.45), rgba(0,0,0,.92));
+      padding: calc(14px + var(--safe-top)) calc(14px + var(--safe-right)) calc(14px + var(--safe-bottom)) calc(14px + var(--safe-left));
+      overflow:auto;
+      -webkit-overflow-scrolling: touch;
     }
+    .overlay.open{ display:block; }
 
-    .panel{
-      background: var(--panel);
-      border:1px solid var(--line);
-      border-radius: var(--r);
-      box-shadow: var(--shadow);
+    .card{
+      max-width: 820px;
+      margin: 0 auto;
+      padding: 16px;
+      border-radius: 18px;
+      border: 1px solid rgba(255,255,255,.14);
+      background: rgba(10,10,10,.62);
       backdrop-filter: blur(10px);
+      box-shadow: 0 10px 30px rgba(0,0,0,.35);
     }
-
-    .topbar{
-      position:absolute;
-      left:12px; right:12px; top:12px;
+    .row{
       display:flex;
-      gap:10px;
-      align-items:stretch;
-      justify-content:space-between;
-      z-index: 10;
-      pointer-events:auto;
-    }
-
-    .status{
-      padding:10px 12px;
-      display:flex;
-      flex-direction:column;
-      gap:6px;
-      min-width: 360px;
-      pointer-events:auto;
-    }
-    .status .title{ font-weight:900; font-size:13px; letter-spacing:-0.2px; }
-    .status .meta{
-      display:flex; flex-wrap:wrap;
-      gap:10px;
-      font-size:12px;
-      color: var(--muted);
-      letter-spacing:-0.2px;
+      flex-wrap:wrap;
+      gap: 10px;
       align-items:center;
-    }
-
-    .btnRow{
-      display:flex;
-      gap:8px;
-      padding:8px;
-      align-items:center;
-      pointer-events:auto;
-    }
-
-    button{
-      appearance:none;
-      border:none;
-      background:none;
-      color:inherit;
-      font:inherit;
-    }
-
-    .btn{
-      border: 1px solid rgba(255,255,255,0.14);
-      background: linear-gradient(180deg, var(--btn1), var(--btn2));
-      color: var(--text);
-      padding:10px 12px;
-      border-radius:14px;
-      font-weight:900;
-      font-size:13px;
-      letter-spacing:-0.2px;
-      cursor:pointer;
-      touch-action: manipulation;
-      display:inline-flex;
-      align-items:center;
-      justify-content:center;
-      gap:8px;
-      min-height: 40px;
-      box-shadow: 0 10px 18px rgba(0,0,0,0.22);
-      pointer-events:auto;
-    }
-    .btn.small{ padding:9px 10px; min-height:36px; font-size:12px; border-radius:12px; }
-    .btn.ghost{ background: rgba(255,255,255,0.06); box-shadow:none; }
-    .btn.bad{ background: linear-gradient(180deg, rgba(255,106,106,0.25), rgba(255,106,106,0.16)); border-color: rgba(255,106,106,0.28); }
-    .btn.good{ background: linear-gradient(180deg, rgba(106,227,123,0.22), rgba(106,227,123,0.14)); border-color: rgba(106,227,123,0.28); }
-    .btn.on{ outline:2px solid rgba(106,167,255,0.55); border-color: rgba(106,167,255,0.55); }
-    .btn:active{ transform: translateY(1px); }
-
-    .chip{
-      font-size:12px;
-      padding:6px 10px;
-      border-radius:999px;
-      border: 1px solid rgba(255,255,255,0.12);
-      background: rgba(255,255,255,0.06);
-      color: var(--muted);
-      display:inline-flex;
-      gap:6px;
-      align-items:center;
-    }
-    .chip.good{ color: rgba(106,227,123,0.95); border-color: rgba(106,227,123,0.28); }
-    .chip.warn{ color: rgba(255,211,106,0.95); border-color: rgba(255,211,106,0.30); }
-    .chip.bad{  color: rgba(255,106,106,0.95); border-color: rgba(255,106,106,0.30); }
-
-    .bottombar{
-      position:absolute;
-      left:12px; right:12px; bottom:12px;
-      display:flex;
-      gap:12px;
-      align-items:flex-end;
-      justify-content:space-between;
-      z-index: 10;
-      pointer-events:auto;
-    }
-
-    .joystick{
-      width: 150px; height: 150px;
-      border-radius: 999px;
-      border: 1px solid rgba(255,255,255,0.16);
-      background: radial-gradient(circle at 30% 30%, rgba(255,255,255,0.08), rgba(255,255,255,0.03));
-      position:relative;
-      touch-action:none;
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      pointer-events:auto;
-    }
-    .stick{
-      width:64px; height:64px;
-      border-radius:999px;
-      background: rgba(255,255,255,0.12);
-      border:1px solid rgba(255,255,255,0.20);
-      box-shadow: 0 12px 26px rgba(0,0,0,0.28);
-      position:absolute;
-      left:50%; top:50%;
-      transform: translate(-50%,-50%);
-      pointer-events:none;
-    }
-
-    .actions{
-      display:flex;
-      gap:10px;
-      align-items:flex-end;
-      pointer-events:auto;
     }
     .col{
-      padding:10px;
       display:flex;
       flex-direction:column;
       gap:10px;
-      align-items:stretch;
+    }
+    .spacer{ height: 10px; }
+
+    .btn{
+      appearance:none;
+      border:1px solid rgba(255,255,255,.18);
+      background: rgba(25,25,25,.78);
+      color:#fff;
+      border-radius: 14px;
+      padding: 12px 14px;
+      font-weight: 900;
+      cursor:pointer;
+      user-select:none;
+      -webkit-user-select:none;
+      touch-action: manipulation;
+    }
+    .btn:active{ transform: scale(.99); background: rgba(45,45,45,.88); }
+
+    .mini{
+      font-size: 12px;
+      opacity:.85;
+      line-height: 1.4;
+    }
+
+    /* ====== LOGO (flash + glow like flash-game) ====== */
+    .logo{
+      font-size: clamp(40px, 8vw, 76px);
+      letter-spacing: 2px;
+      font-weight: 1000;
+      margin: 8px 0 4px 0;
+      text-align:center;
+      text-transform: uppercase;
+      position:relative;
+      filter: drop-shadow(0 0 10px rgba(120,160,255,.35));
+      animation: glowPulse 1.2s ease-in-out infinite;
+    }
+    .logo::after{
+      content:"";
+      position:absolute;
+      inset:-12px -18px;
+      background: radial-gradient(360px 140px at 50% 50%, rgba(160,200,255,.24), rgba(0,0,0,0));
+      pointer-events:none;
+      mix-blend-mode: screen;
+      animation: flashSweep 2.2s linear infinite;
+      opacity:.55;
+    }
+    @keyframes glowPulse{
+      0%   { text-shadow: 0 0 8px rgba(160,210,255,.40), 0 0 18px rgba(120,160,255,.25); transform: translateY(0); }
+      50%  { text-shadow: 0 0 18px rgba(210,240,255,.78), 0 0 44px rgba(140,180,255,.42); transform: translateY(-1px); }
+      100% { text-shadow: 0 0 8px rgba(160,210,255,.40), 0 0 18px rgba(120,160,255,.25); transform: translateY(0); }
+    }
+    @keyframes flashSweep{
+      0%   { transform: translateX(-30%) rotate(-6deg); opacity:.15; }
+      15%  { opacity:.95; }
+      30%  { opacity:.20; }
+      100% { transform: translateX(30%) rotate(-6deg); opacity:.15; }
+    }
+
+    .sub{
+      text-align:center;
+      opacity:.9;
+      margin: 0 0 14px 0;
+      font-weight: 700;
+      letter-spacing: .2px;
+    }
+
+    .hr{
+      height:1px;
+      background: rgba(255,255,255,.12);
+      margin: 14px 0;
+    }
+
+    /* ====== HUD ROOT (does not block gameplay touch) ====== */
+    #hudRoot{
+      position:fixed;
+      inset:0;
+      z-index:60;
+      pointer-events:none; /* IMPORTANT */
+    }
+    #hudRoot *{ box-sizing:border-box; }
+    .hudBtn, .hudFab, #hudPanel, #hudPanel *{
       pointer-events:auto;
     }
 
-    .toastWrap{
-      position:absolute;
-      left:50%;
-      bottom:190px;
-      transform: translateX(-50%);
+    .hudFab, .hudBtn{
+      width: var(--btn);
+      height: var(--btn);
+      border-radius: 16px;
+      border: 1px solid rgba(255,255,255,.18);
+      background: rgba(20,20,20,var(--hudAlpha));
+      color:#fff;
+      display:grid;
+      place-items:center;
+      font-weight: 1000;
+      user-select:none;
+      -webkit-user-select:none;
+      touch-action: manipulation;
+      backdrop-filter: blur(6px);
+    }
+    .hudFab:active, .hudBtn:active{
+      transform: scale(.98);
+      background: rgba(40,40,40,var(--hudAlphaActive));
+    }
+
+    /* HUD groups */
+    #hudTop{
+      position:fixed;
+      top: calc(var(--gap) + var(--safe-top));
+      left: calc(var(--gap) + var(--safe-left));
+      right: calc(var(--gap) + var(--safe-right));
       display:flex;
-      flex-direction:column;
-      gap:8px;
+      justify-content: space-between;
+      align-items:center;
+      gap: var(--gap);
+      pointer-events:none; /* only buttons will be clickable */
+    }
+    #hudTop .hudFab{
+      pointer-events:auto;
+    }
+
+    #hudBars{
+      display:flex;
+      gap: 10px;
       align-items:center;
       pointer-events:none;
-      z-index: 20;
-      max-width: min(640px, calc(100vw - 24px));
     }
-    .toast{
-      background: rgba(0,0,0,0.60);
-      border: 1px solid rgba(255,255,255,0.14);
+    .barWrap{
+      width: min(44vw, 420px);
+      height: 18px;
       border-radius: 999px;
-      padding: 10px 14px;
-      font-size: 13px;
-      color: rgba(255,255,255,0.92);
-      backdrop-filter: blur(8px);
-      box-shadow: 0 12px 30px rgba(0,0,0,0.25);
-      opacity:0;
-      transform: translateY(6px);
-      transition: opacity .18s ease, transform .18s ease;
-      text-align:center;
-      line-height:1.25;
-      word-break: keep-all;
+      border: 1px solid rgba(255,255,255,.14);
+      background: rgba(0,0,0,.45);
+      overflow:hidden;
+      position:relative;
+      pointer-events:none;
     }
-    .toast.show{ opacity:1; transform: translateY(0); }
-    .toast b{ color:#fff; }
-
-    #debug{
+    .barFill{
+      height:100%;
+      width: 50%;
+      background: linear-gradient(90deg, rgba(90,220,120,.95), rgba(40,190,90,.95));
+      transition: width .12s linear;
+    }
+    .barText{
       position:absolute;
-      left:12px; bottom:12px;
-      transform: translateY(-170px);
-      width: min(760px, calc(100vw - 24px));
-      z-index: 9999;
-      display:block;
-      padding:10px 12px;
-      font-size:12px;
-      color: rgba(255,255,255,0.92);
-      pointer-events:auto;
+      inset:0;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      font-size: 11px;
+      font-weight: 900;
+      opacity:.92;
+      pointer-events:none;
+      text-shadow: 0 1px 2px rgba(0,0,0,.8);
     }
-    #debug pre{
-      margin:8px 0 0 0;
-      white-space: pre-wrap;
-      word-break: break-word;
-      color: rgba(255,255,255,0.82);
-      line-height: 1.35;
+    .barWrap.hp .barFill{
+      background: linear-gradient(90deg, rgba(255,70,90,.95), rgba(220,30,60,.95));
     }
 
-    #fatal{
-      position:absolute;
-      inset:12px;
-      z-index: 10000;
-      display:none;
-      padding:14px;
-      background: rgba(0,0,0,0.78);
-      border: 1px solid rgba(255,106,106,0.35);
+    #hudLeft{
+      position:fixed;
+      left: calc(var(--gap) + var(--safe-left));
+      bottom: calc(var(--gap) + var(--safe-bottom));
+      display:grid;
+      gap: var(--gap);
+      grid-template-columns: var(--btn);
+    }
+    #hudRight{
+      position:fixed;
+      right: calc(var(--gap) + var(--safe-right));
+      bottom: calc(var(--gap) + var(--safe-bottom));
+      display:grid;
+      gap: var(--gap);
+      grid-template-columns: repeat(2, var(--btn));
+    }
+
+    /* Menu panel (scrollable so EXIT never disappears) */
+    #hudPanel{
+      position:fixed;
+      top: calc(var(--gap) + var(--safe-top));
+      right: calc(var(--gap) + var(--safe-right));
+      width: var(--panelW);
+      max-height: var(--panelH);
+      padding: 12px;
       border-radius: 18px;
+      border: 1px solid rgba(255,255,255,.16);
+      background: rgba(10,10,10,.9);
       overflow:auto;
-      pointer-events:auto;
+      -webkit-overflow-scrolling: touch;
+      display:none;
     }
-    #fatal h3{
-      margin:0 0 8px 0;
-      color: rgba(255,106,106,0.95);
+    #hudPanel.open{ display:block; }
+
+    #hudPanel h3{
+      margin: 0 0 10px 0;
       font-size: 14px;
-      letter-spacing:-0.2px;
+      font-weight: 1000;
+      opacity:.92;
+      letter-spacing: .2px;
     }
-    #fatal pre{
-      margin:0;
-      white-space: pre-wrap;
-      word-break: break-word;
+    .menuGrid{
+      display:grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    .menuBtn{
+      border-radius: 14px;
+      border: 1px solid rgba(255,255,255,.16);
+      background: rgba(30,30,30,.78);
+      color:#fff;
+      padding: 12px 12px;
+      font-weight: 950;
+      user-select:none;
+      -webkit-user-select:none;
+      touch-action: manipulation;
+    }
+    .menuBtn:active{ transform: scale(.99); background: rgba(48,48,48,.88); }
+
+    .toggleLine{
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap: 10px;
+      padding: 10px 8px;
+      border-radius: 14px;
+      border: 1px solid rgba(255,255,255,.10);
+      background: rgba(0,0,0,.25);
+      margin-top: 10px;
+    }
+    .pill{
+      padding: 6px 10px;
+      border-radius: 999px;
+      border: 1px solid rgba(255,255,255,.18);
+      background: rgba(25,25,25,.72);
       font-size: 12px;
-      color: rgba(255,255,255,0.88);
-      line-height: 1.45;
+      font-weight: 950;
+      opacity:.95;
+      user-select:none;
+      -webkit-user-select:none;
+      cursor:pointer;
+    }
+    .pill.on{
+      background: rgba(40,120,255,.30);
+      border-color: rgba(120,180,255,.40);
     }
 
-    @media (max-width: 520px){
-      .joystick{ width:132px; height:132px; }
-      #debug{ transform: translateY(-186px); }
-      .status{ min-width: 300px; }
+    /* small */
+    @media (max-width: 420px){
+      :root{ --btn: clamp(40px, 11vw, 58px); }
+      .barWrap{ height: 16px; }
     }
   </style>
 </head>
 
 <body>
 <div id="app">
-  <canvas id="cv"></canvas>
+  <div id="canvasWrap">
+    <canvas id="game" width="960" height="540"></canvas>
+  </div>
 
-  <div id="hud">
-    <div class="topbar">
-      <div class="panel status">
-        <div class="title">보스게이트 v4.5 (자동 확장자 탐색)</div>
-        <div class="meta">
-          <span id="sceneTxt">장면: -</span>
-          <span id="stageTxt">스테이지: -</span>
-          <span id="timerTxt">제한: -</span>
-          <span id="fpsTxt">FPS: -</span>
-        </div>
-        <div class="meta">
-          <span class="chip" id="devTxt">기기: -</span>
-          <span class="chip" id="ctxTxt">CTX: -</span>
-          <span class="chip" id="assetTxt">ASSET: -</span>
-          <span class="chip good" id="killTxt">처치: 0</span>
-          <span class="chip" id="invTxt">인벤: 0</span>
-        </div>
+  <!-- MAIN MENU -->
+  <div class="overlay open" id="menuOverlay">
+    <div class="card">
+      <div class="logo">BOSS GATE</div>
+      <div class="sub">플래시 감성 액션 RPG · 스테이지 공략 · 파밍 · 감정 · 오토사냥</div>
+      <div class="hr"></div>
+
+      <div class="row" style="justify-content:center;">
+        <button class="btn" id="btnStart">게임 시작</button>
+        <button class="btn" id="btnContinue" disabled>이어하기</button>
+        <button class="btn" id="btnOptions">설정</button>
+        <button class="btn" id="btnReset">새로시작(데이터 초기화)</button>
       </div>
 
-      <div class="panel btnRow">
-        <button class="btn small" id="btnStage">스테이지</button>
-        <button class="btn small bad" id="btnBoss">보스</button>
-        <button class="btn small ghost" id="btnRespawn">몹재생성</button>
-        <button class="btn small ghost" id="btnReset">리셋</button>
-      </div>
-    </div>
+      <div class="spacer"></div>
 
-    <div class="toastWrap" id="toastWrap"></div>
-
-    <div class="bottombar">
-      <div class="panel joystick" id="joy">
-        <div class="stick" id="stick"></div>
+      <div class="mini" style="text-align:center;">
+        PC: 이동 ←→ / 점프 SPACE / 공격 Z / 스킬 X / 인벤 I / 메뉴 ESC<br/>
+        모바일: 좌측 이동 / 우측 공격·스킬·점프·포션 / ⚙ 메뉴에서 전체 기능
       </div>
 
-      <div class="actions">
-        <div class="panel col">
-          <button class="btn good" id="btnAttack">공격</button>
-          <button class="btn" id="btnDash">대시</button>
-        </div>
-        <div class="panel col">
-          <button class="btn small on" id="btnToggleTarget">오토 타겟</button>
-          <button class="btn small on" id="btnToggleAtk">오토 공격</button>
-          <button class="btn small ghost" id="btnPick">줍기</button>
-        </div>
+      <div class="hr"></div>
+
+      <div class="mini">
+        <b>리소스(권장)</b><br/>
+        /assets/bg.png, /assets/player_sheet.png, /assets/slime_sheet.png, /assets/fx_hit.png<br/>
+        /assets/bgm.mp3, /assets/sfx_hit.mp3, /assets/sfx_coin.mp3<br/>
+        (없어도 동작: 도형/기본 사운드로 대체)
       </div>
     </div>
+  </div>
 
-    <div class="panel" id="debug">
-      <b>DEBUG</b> (ASSET OK 로그가 찍히면 이미지 경로/확장자 정상)
-      <pre id="debugLog"></pre>
+  <!-- OPTIONS OVERLAY -->
+  <div class="overlay" id="optionsOverlay">
+    <div class="card">
+      <div class="row" style="justify-content:space-between;">
+        <div class="col">
+          <div style="font-weight:1000; font-size:18px;">설정</div>
+          <div class="mini">모바일에서도 ‘자동 선택 재생’(mp3/mp4/m4a)을 지원합니다. 다만 자동재생은 보통 “버튼 클릭” 같은 사용자 입력 후에만 가능해요.</div>
+        </div>
+        <button class="btn" id="btnCloseOptions">닫기</button>
+      </div>
+
+      <div class="hr"></div>
+
+      <div class="col">
+        <div style="font-weight:900;">오디오</div>
+        <div class="mini">BGM/효과음을 너가 가진 파일로 교체 가능(권장: mp3). mp4/m4a도 브라우저가 지원하면 재생됩니다.</div>
+        <div class="row">
+          <label class="btn" style="display:inline-flex; gap:10px; align-items:center;">
+            BGM 파일 선택
+            <input id="fileBgm" type="file" accept="audio/*,.mp3,.m4a,.mp4,.aac,.ogg,.wav" style="display:none;">
+          </label>
+          <label class="btn" style="display:inline-flex; gap:10px; align-items:center;">
+            타격음 선택
+            <input id="fileHit" type="file" accept="audio/*,.mp3,.m4a,.mp4,.aac,.ogg,.wav" style="display:none;">
+          </label>
+          <label class="btn" style="display:inline-flex; gap:10px; align-items:center;">
+            코인음 선택
+            <input id="fileCoin" type="file" accept="audio/*,.mp3,.m4a,.mp4,.aac,.ogg,.wav" style="display:none;">
+          </label>
+        </div>
+
+        <div class="row">
+          <button class="btn" id="btnTestAudio">오디오 테스트</button>
+          <button class="btn" id="btnClearAudio">오디오 교체 해제(기본으로)</button>
+        </div>
+
+        <div id="audioMsg" class="mini" style="opacity:.9;"></div>
+
+        <div class="hr"></div>
+
+        <div style="font-weight:900;">그래픽</div>
+        <div class="mini">화면 흔들림/튐 방지: 카메라를 부드럽게 따라가고, 충돌은 축 분리(AABB)로 안정적으로 해결합니다.</div>
+        <div class="row">
+          <button class="btn" id="btnTogglePixel">픽셀 렌더링 토글</button>
+          <button class="btn" id="btnBackToMenu">메인메뉴로</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- HUD -->
+  <div id="hudRoot">
+    <div id="hudTop">
+      <div id="hudBars">
+        <div class="barWrap hp">
+          <div class="barFill" id="hpFill"></div>
+          <div class="barText" id="hpText">HP</div>
+        </div>
+        <div class="barWrap">
+          <div class="barFill" id="mpFill"></div>
+          <div class="barText" id="mpText">SP</div>
+        </div>
+      </div>
+
+      <button class="hudFab" id="btnGear" aria-label="menu">⚙</button>
     </div>
 
-    <div id="fatal">
-      <h3>실행 중 에러 발생(먹통 원인)</h3>
-      <pre id="fatalText"></pre>
-      <div style="margin-top:10px; display:flex; gap:10px; flex-wrap:wrap;">
-        <button class="btn small" id="btnHideFatal">닫기</button>
-        <button class="btn small ghost" id="btnReload">새로고침</button>
+    <div id="hudLeft">
+      <button class="hudBtn" data-act="left">◀</button>
+      <button class="hudBtn" data-act="right">▶</button>
+      <button class="hudBtn" data-act="inv">I</button>
+    </div>
+
+    <div id="hudRight">
+      <button class="hudBtn" data-act="attack">Z</button>
+      <button class="hudBtn" data-act="skill">X</button>
+      <button class="hudBtn" data-act="jump">⤴</button>
+      <button class="hudBtn" data-act="potion">❤</button>
+    </div>
+
+    <div id="hudPanel">
+      <h3>BOSS GATE MENU</h3>
+      <div class="menuGrid">
+        <button class="menuBtn" data-act="inv">인벤토리</button>
+        <button class="menuBtn" data-act="daily">일일 미션</button>
+        <button class="menuBtn" data-act="achv">업적</button>
+        <button class="menuBtn" data-act="auto">오토 설정</button>
+        <button class="menuBtn" data-act="audio">오디오 설정</button>
+        <button class="menuBtn" data-act="exit">게임 종료</button>
       </div>
+
+      <div class="toggleLine">
+        <div style="font-weight:950;">오토 타겟</div>
+        <div class="pill" id="pillAutoTarget">OFF</div>
+      </div>
+      <div class="toggleLine">
+        <div style="font-weight:950;">오토 공격</div>
+        <div class="pill" id="pillAutoAttack">OFF</div>
+      </div>
+      <div class="toggleLine">
+        <div style="font-weight:950;">오토 줍기</div>
+        <div class="pill" id="pillAutoLoot">OFF</div>
+      </div>
+      <div class="toggleLine">
+        <div style="font-weight:950;">오토 이동/추적</div>
+        <div class="pill" id="pillAutoMove">LOCK</div>
+      </div>
+
+      <div class="hr"></div>
+
+      <div class="mini" id="stageInfo"></div>
+      <div class="mini" id="toastBox" style="margin-top:10px; opacity:.9;"></div>
     </div>
   </div>
 </div>
 
 <script>
-(() => {
-  "use strict";
+/* ==============================
+   BOSS GATE - Single File 최신본
+   - 모바일 HUD 지능형(세이프에어리어/자동스케일/패널스크롤)
+   - 화면/캐릭/몬스터 "위아래 튐" 방지: 축분리 충돌 + 카메라 y 데드존 + 부드러운 추적
+   - Z/X 연타해도 몬스터 공격으로 HP 감소 정상(공격 연타가 무적 리셋 못함)
+   - 드랍 희소성: 확률 드랍 + 맥스 드랍 수 제한
+   - 인벤토리/판매/장비/옵션/세트효과/감정 시스템
+   - HP 회복: 자동회복(전투후) + 포션 + 흡혈(옵션/세트)
+   - 스테이지(1-1,1-2...) + 보스문
+   - 오디오: 기본(/assets/*.mp3) + 파일 업로드(mp3/mp4/m4a 자동 선택 재생 시도)
+================================ */
 
-  // ---------- DOM ----------
-  const cv = document.getElementById("cv");
-  const sceneTxt = document.getElementById("sceneTxt");
-  const stageTxt = document.getElementById("stageTxt");
-  const timerTxt = document.getElementById("timerTxt");
-  const fpsTxt   = document.getElementById("fpsTxt");
-  const devTxt   = document.getElementById("devTxt");
-  const ctxTxt   = document.getElementById("ctxTxt");
-  const assetTxt = document.getElementById("assetTxt");
-  const killTxt  = document.getElementById("killTxt");
-  const invTxt   = document.getElementById("invTxt");
+/* ====== Utilities ====== */
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const lerp = (a,b,t)=> a+(b-a)*t;
+const rand = (a,b)=> a+Math.random()*(b-a);
+const randi=(a,b)=> Math.floor(rand(a,b+1));
+const now = ()=> performance.now();
 
-  const toastWrap = document.getElementById("toastWrap");
-  const debugLogEl = document.getElementById("debugLog");
+/* ====== Persistent Save ====== */
+const SAVE_KEY = "BOSSGATE_SAVE_V3";
+function loadSave(){
+  try{
+    const raw = localStorage.getItem(SAVE_KEY);
+    if(!raw) return null;
+    return JSON.parse(raw);
+  }catch(e){ return null; }
+}
+function saveNow(){
+  localStorage.setItem(SAVE_KEY, JSON.stringify(game.saveData()));
+}
+function clearSave(){
+  localStorage.removeItem(SAVE_KEY);
+}
 
-  const btnStage = document.getElementById("btnStage");
-  const btnBoss  = document.getElementById("btnBoss");
-  const btnRespawn = document.getElementById("btnRespawn");
-  const btnReset = document.getElementById("btnReset");
+/* ====== DOM ====== */
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d", {alpha:false});
+const menuOverlay = document.getElementById("menuOverlay");
+const optionsOverlay = document.getElementById("optionsOverlay");
+const btnStart = document.getElementById("btnStart");
+const btnContinue = document.getElementById("btnContinue");
+const btnOptions = document.getElementById("btnOptions");
+const btnReset = document.getElementById("btnReset");
+const btnCloseOptions = document.getElementById("btnCloseOptions");
+const btnBackToMenu = document.getElementById("btnBackToMenu");
+const btnTogglePixel = document.getElementById("btnTogglePixel");
 
-  const btnAttack = document.getElementById("btnAttack");
-  const btnDash   = document.getElementById("btnDash");
-  const btnToggleTarget = document.getElementById("btnToggleTarget");
-  const btnToggleAtk    = document.getElementById("btnToggleAtk");
-  const btnPick         = document.getElementById("btnPick");
+const hpFill = document.getElementById("hpFill");
+const hpText = document.getElementById("hpText");
+const mpFill = document.getElementById("mpFill");
+const mpText = document.getElementById("mpText");
 
-  const joy = document.getElementById("joy");
-  const stick = document.getElementById("stick");
+const btnGear = document.getElementById("btnGear");
+const hudPanel = document.getElementById("hudPanel");
+const stageInfo = document.getElementById("stageInfo");
+const toastBox = document.getElementById("toastBox");
 
-  const fatal = document.getElementById("fatal");
-  const fatalText = document.getElementById("fatalText");
-  const btnHideFatal = document.getElementById("btnHideFatal");
-  const btnReload = document.getElementById("btnReload");
+const pillAutoTarget = document.getElementById("pillAutoTarget");
+const pillAutoAttack = document.getElementById("pillAutoAttack");
+const pillAutoLoot = document.getElementById("pillAutoLoot");
+const pillAutoMove = document.getElementById("pillAutoMove");
 
-  // ---------- 오류 처리 ----------
-  function showFatal(msg){
-    fatalText.textContent = msg;
-    fatal.style.display = "block";
+const fileBgm = document.getElementById("fileBgm");
+const fileHit = document.getElementById("fileHit");
+const fileCoin = document.getElementById("fileCoin");
+const btnTestAudio = document.getElementById("btnTestAudio");
+const btnClearAudio = document.getElementById("btnClearAudio");
+const audioMsg = document.getElementById("audioMsg");
+
+/* ====== Canvas scaling (fixed, no shake) ====== */
+const BASE_W = 960;
+const BASE_H = 540;
+let renderW = BASE_W, renderH = BASE_H;
+let pixelMode = true;
+
+function resizeCanvas(){
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+
+  // Maintain aspect ratio (16:9). Letterbox.
+  const aspect = BASE_W/BASE_H;
+  let cw = vw, ch = vw/aspect;
+  if(ch > vh){
+    ch = vh;
+    cw = vh*aspect;
   }
-  window.addEventListener("error", (e)=>{
-    const msg =
-`[window.onerror]
-${e.message || "unknown error"}
-file: ${e.filename || "-"}
-line: ${e.lineno || "-"} col: ${e.colno || "-"}
-${e.error && e.error.stack ? ("\n" + e.error.stack) : ""}`;
-    showFatal(msg);
+  renderW = Math.floor(cw);
+  renderH = Math.floor(ch);
+
+  canvas.style.width = renderW + "px";
+  canvas.style.height = renderH + "px";
+
+  // Keep internal resolution constant for stable physics/camera.
+  canvas.width = BASE_W;
+  canvas.height = BASE_H;
+
+  ctx.imageSmoothingEnabled = !pixelMode;
+}
+window.addEventListener("resize", resizeCanvas, {passive:true});
+resizeCanvas();
+
+/* ====== Input ====== */
+const input = {
+  left:false, right:false, jump:false,
+  attack:false, skill:false,
+  inv:false, menu:false, potion:false
+};
+
+function setAction(act, down){
+  if(act === "left") input.left = down;
+  else if(act === "right") input.right = down;
+  else if(act === "jump") input.jump = down;
+  else if(act === "attack") input.attack = down;
+  else if(act === "skill") input.skill = down;
+  else if(act === "inv") input.inv = down;
+  else if(act === "menu") input.menu = down;
+  else if(act === "potion") input.potion = down;
+}
+
+function onKey(e, down){
+  const k = (e.key || "").toLowerCase();
+  if(k === "arrowleft" || k === "a") setAction("left", down);
+  if(k === "arrowright" || k === "d") setAction("right", down);
+  if(k === " " || k === "spacebar") setAction("jump", down);
+  if(k === "z") setAction("attack", down);
+  if(k === "x") setAction("skill", down);
+  if(k === "i") setAction("inv", down);
+  if(k === "escape") setAction("menu", down);
+  if(k === "h") setAction("potion", down);
+}
+window.addEventListener("keydown", (e)=>{ onKey(e,true); }, {passive:true});
+window.addEventListener("keyup", (e)=>{ onKey(e,false); }, {passive:true});
+
+/* Mobile HUD buttons */
+document.querySelectorAll("[data-act]").forEach(btn=>{
+  const act = btn.getAttribute("data-act");
+
+  const down = (e)=>{
+    e.preventDefault();
+    if(act==="audio"){ openOptions(); return; }
+    if(act==="exit"){ game.exitToMenu(); return; }
+    if(act==="auto"){ hudPanel.classList.add("open"); return; }
+    if(act==="daily"){ game.openDaily(); return; }
+    if(act==="achv"){ game.openAchv(); return; }
+    if(act==="settings"){ openOptions(); return; }
+
+    if(act==="inv"){ game.toggleInventory(); return; }
+
+    // movement/combat buttons
+    setAction(act, true);
+  };
+  const up = (e)=>{
+    e.preventDefault();
+    // keep menu buttons not toggling input
+    if(["inv","audio","exit","daily","achv","auto","settings"].includes(act)) return;
+    setAction(act, false);
+  };
+
+  btn.addEventListener("touchstart", down, {passive:false});
+  btn.addEventListener("touchend", up, {passive:false});
+  btn.addEventListener("touchcancel", up, {passive:false});
+  btn.addEventListener("mousedown", down);
+  btn.addEventListener("mouseup", up);
+  btn.addEventListener("mouseleave", up);
+  btn.addEventListener("click", (e)=>{ e.preventDefault(); }, {passive:false});
+});
+
+/* HUD menu panel */
+btnGear.addEventListener("click", ()=>{
+  hudPanel.classList.toggle("open");
+});
+document.addEventListener("pointerdown", (e)=>{
+  if(!hudPanel.classList.contains("open")) return;
+  const inside = hudPanel.contains(e.target) || btnGear.contains(e.target);
+  if(!inside) hudPanel.classList.remove("open");
+});
+
+/* ====== Assets (sprites) ====== */
+function loadImage(src){
+  return new Promise((resolve)=>{
+    const img = new Image();
+    img.onload = ()=> resolve(img);
+    img.onerror = ()=> resolve(null);
+    img.src = src;
   });
-  window.addEventListener("unhandledrejection", (e)=>{
-    const reason = (e && e.reason) ? (e.reason.stack || String(e.reason)) : "unknown rejection";
-    showFatal(`[unhandledrejection]\n${reason}`);
-  });
-  btnHideFatal.addEventListener("click", ()=> fatal.style.display="none");
-  btnReload.addEventListener("click", ()=> location.reload());
+}
+const assets = {
+  bg:null,
+  playerSheet:null,
+  slimeSheet:null,
+  fxHit:null
+};
 
-  // ---------- 유틸 ----------
-  const clamp = (v,a,b)=> Math.max(a, Math.min(b,v));
-  const now = ()=> performance.now();
-  const dist = (ax,ay,bx,by)=> Math.hypot(ax-bx, ay-by);
+async function loadAssets(){
+  assets.bg = await loadImage("./assets/bg.png");
+  assets.playerSheet = await loadImage("./assets/player_sheet.png");
+  assets.slimeSheet = await loadImage("./assets/slime_sheet.png");
+  assets.fxHit = await loadImage("./assets/fx_hit.png");
+}
 
-  function isMobileLike(){
-    return (navigator.maxTouchPoints || 0) > 0 || matchMedia("(pointer: coarse)").matches;
+/* ====== Audio (default + user uploads) ====== */
+class AudioBank{
+  constructor(){
+    this.ctx = null;
+    this.bgm = new Audio();
+    this.bgm.loop = true;
+    this.bgm.volume = 0.55;
+
+    this.sfxHit = new Audio();
+    this.sfxHit.volume = 0.7;
+
+    this.sfxCoin = new Audio();
+    this.sfxCoin.volume = 0.65;
+
+    // default sources
+    this.defaultBgm = "./assets/bgm.mp3";
+    this.defaultHit = "./assets/sfx_hit.mp3";
+    this.defaultCoin = "./assets/sfx_coin.mp3";
+
+    this.userBgmUrl = null;
+    this.userHitUrl = null;
+    this.userCoinUrl = null;
+
+    this.applyDefaults();
   }
-  devTxt.textContent = `기기: ${isMobileLike() ? "스마트폰/태블릿" : "PC"}`;
 
-  // ---------- 로그 ----------
-  const logs = [];
-  function log(s){
-    const t = new Date().toISOString().slice(11,19);
-    logs.push(`[${t}] ${s}`);
-    while (logs.length > 22) logs.shift();
-    debugLogEl.textContent = logs.join("\n");
+  applyDefaults(){
+    this.bgm.src = this.defaultBgm;
+    this.sfxHit.src = this.defaultHit;
+    this.sfxCoin.src = this.defaultCoin;
   }
 
-  // ---------- 토스트 ----------
-  const toasts = [];
-  function toast(html, life=1100){
-    const el = document.createElement("div");
-    el.className = "toast";
-    el.innerHTML = html;
-    toastWrap.appendChild(el);
-    requestAnimationFrame(()=> el.classList.add("show"));
-    toasts.push({ el, die: now()+life });
-  }
-  function updateToasts(){
-    const t = now();
-    for (let i=toasts.length-1;i>=0;i--){
-      if (t > toasts[i].die){
-        const el = toasts[i].el;
-        el.classList.remove("show");
-        setTimeout(()=> el.remove(), 220);
-        toasts.splice(i,1);
-      }
+  setFromFile(type, file){
+    const url = URL.createObjectURL(file);
+    // revoke old
+    if(type==="bgm" && this.userBgmUrl) URL.revokeObjectURL(this.userBgmUrl);
+    if(type==="hit" && this.userHitUrl) URL.revokeObjectURL(this.userHitUrl);
+    if(type==="coin" && this.userCoinUrl) URL.revokeObjectURL(this.userCoinUrl);
+
+    if(type==="bgm"){
+      this.userBgmUrl = url;
+      this.bgm.src = url;
+    }else if(type==="hit"){
+      this.userHitUrl = url;
+      this.sfxHit.src = url;
+    }else if(type==="coin"){
+      this.userCoinUrl = url;
+      this.sfxCoin.src = url;
     }
   }
 
-  // ---------- 버튼 바인딩 ----------
-  function bind(btn, name, fn){
-    const run = (e)=>{
-      try{
-        if (e && e.cancelable) e.preventDefault();
-        log(`BTN: ${name}`);
-        fn();
-      }catch(err){
-        showFatal(`[bind:${name}]\n${err && err.stack ? err.stack : String(err)}`);
-      }
-    };
-    btn.addEventListener("click", run, { passive:false });
-    btn.addEventListener("touchstart", run, { passive:false });
-    btn.addEventListener("pointerdown", run, { passive:false });
+  clearUser(){
+    if(this.userBgmUrl){ URL.revokeObjectURL(this.userBgmUrl); this.userBgmUrl=null; }
+    if(this.userHitUrl){ URL.revokeObjectURL(this.userHitUrl); this.userHitUrl=null; }
+    if(this.userCoinUrl){ URL.revokeObjectURL(this.userCoinUrl); this.userCoinUrl=null; }
+    this.applyDefaults();
   }
 
-  // ---------- 캔버스 ----------
-  const ctx = (() => {
+  async prime(){
+    // Some browsers require a user gesture to allow play; calling play() inside click handlers works.
+    // We'll do a silent play-pause attempt.
     try{
-      const c = cv.getContext("2d", { alpha:false });
-      ctxTxt.textContent = c ? "CTX: 2D OK" : "CTX: FAIL";
-      return c;
-    }catch(_){
-      ctxTxt.textContent = "CTX: FAIL";
-      return null;
+      this.bgm.muted = true;
+      await this.bgm.play();
+      this.bgm.pause();
+      this.bgm.currentTime = 0;
+      this.bgm.muted = false;
+      return true;
+    }catch(e){
+      this.bgm.muted = false;
+      return false;
     }
-  })();
-  if (!ctx){
-    showFatal("Canvas 2D 컨텍스트 생성 실패");
-    return;
   }
 
-  function resize(){
-    const dpr = Math.min(2, Math.max(1, window.devicePixelRatio || 1));
-    const w = Math.max(1, window.innerWidth);
-    const h = Math.max(1, window.innerHeight);
-    cv.width  = Math.floor(w * dpr);
-    cv.height = Math.floor(h * dpr);
-    ctx.setTransform(dpr,0,0,dpr,0,0);
-    log(`resize: ${w}x${h} dpr=${dpr}`);
+  async playBgm(){
+    try{
+      if(this.bgm.paused){
+        await this.bgm.play();
+      }
+      return true;
+    }catch(e){
+      return false;
+    }
   }
-  window.addEventListener("resize", resize, { passive:true });
-  resize();
 
-  // =========================================================
-  //  ASSET SYSTEM (자동 확장자 탐색)
-  // =========================================================
-  const ASSET = {
-    bases: {
-      bg:     "assets/bg",
-      player: "assets/player",
-      slime:  "assets/slime",
-      elite:  "assets/elite",
-      boss:   "assets/boss",
-    },
-    // 가능성 높은 순서 + 대문자 확장자까지 대비
-    exts: ["png","webp","jpg","jpeg","PNG","WEBP","JPG","JPEG"],
-    img: {},
-    ok: {},
-    urlUsed: {},
-    ready: false,
+  stopBgm(){
+    try{
+      this.bgm.pause();
+      this.bgm.currentTime = 0;
+    }catch(e){}
+  }
+
+  sfx(aud){
+    try{
+      aud.currentTime = 0;
+      aud.play().catch(()=>{});
+    }catch(e){}
+  }
+}
+const audio = new AudioBank();
+
+/* ====== Game Data: items/options/sets ====== */
+const ITEM_RARITY = ["N","R","SR","UR"];
+const RARITY_COLOR = {
+  "N":"#cfcfcf",
+  "R":"#66aaff",
+  "SR":"#cc66ff",
+  "UR":"#ffcc44"
+};
+
+const SETS = [
+  {
+    id:"slime",
+    name:"슬라임 세트",
+    two: { lifesteal: 0.03, desc:"흡혈 +3%" },
+    three:{ atkPct: 0.08, desc:"공격력 +8%" }
+  },
+  {
+    id:"gate",
+    name:"게이트 세트",
+    two: { regen: 0.8, desc:"전투후 회복 +0.8/s" },
+    three:{ hpMaxPct: 0.10, desc:"최대HP +10%" }
+  }
+];
+
+function rollRarity(){
+  const r = Math.random();
+  if(r < 0.70) return "N";
+  if(r < 0.92) return "R";
+  if(r < 0.985) return "SR";
+  return "UR";
+}
+
+function rollOption(rarity){
+  // base option pool
+  const pool = [
+    {k:"atk",  min:1,  max:4,  w:1.00},
+    {k:"def",  min:1,  max:4,  w:1.00},
+    {k:"hp",   min:8,  max:24, w:1.00},
+    {k:"crit", min:1,  max:4,  w:0.70}, // %
+    {k:"ls",   min:1,  max:4,  w:0.55}, // lifesteal %
+    {k:"regen",min:1,  max:3,  w:0.55}  // combat-end regen
+  ];
+  // rarity scales option count
+  const count = rarity==="N"?1:rarity==="R"?2:rarity==="SR"?3:4;
+  const opts = [];
+  for(let i=0;i<count;i++){
+    // weighted pick
+    let sum = pool.reduce((s,p)=>s+p.w,0);
+    let t = Math.random()*sum;
+    let pick = pool[0];
+    for(const p of pool){
+      t -= p.w;
+      if(t<=0){ pick=p; break; }
+    }
+    const val = randi(pick.min, pick.max);
+    opts.push({k:pick.k, v:val});
+  }
+  return opts;
+}
+
+function optionText(opt){
+  const k = opt.k;
+  const v = opt.v;
+  if(k==="atk") return `공격 +${v}`;
+  if(k==="def") return `방어 +${v}`;
+  if(k==="hp") return `HP +${v}`;
+  if(k==="crit") return `치명 +${v}%`;
+  if(k==="ls") return `흡혈 +${v}%`;
+  if(k==="regen") return `전투후 회복 +${(v*0.3).toFixed(1)}/s`;
+  return `${k}+${v}`;
+}
+
+function createItem({slot="weapon", level=1, setId=null, forcedRarity=null}){
+  const rarity = forcedRarity || rollRarity();
+  const base = {
+    id: "it_" + Math.random().toString(36).slice(2),
+    slot,
+    level,
+    rarity,
+    setId,
+    identified: false,
+    options: [],
+    sellValue: 0
   };
+  // base stats by slot
+  const baseAtk = slot==="weapon" ? randi(2,4) + Math.floor(level/2) : 0;
+  const baseDef = slot==="armor" ? randi(1,3) + Math.floor(level/3) : 0;
+  const baseHp  = slot==="armor" ? randi(6,12) + Math.floor(level/2) : 0;
 
-  function loadImageTry(url){
-    return new Promise((resolve)=>{
-      const im = new Image();
-      im.decoding = "async";
-      im.onload = ()=> resolve({ ok:true, im, url });
-      im.onerror = ()=> resolve({ ok:false, im:null, url });
-      im.src = url;
-    });
+  base.baseAtk = baseAtk;
+  base.baseDef = baseDef;
+  base.baseHp = baseHp;
+
+  base.options = rollOption(rarity);
+
+  // price
+  const rarityMul = rarity==="N"?1:rarity==="R"?2:rarity==="SR"?4:8;
+  base.sellValue = (10 + baseAtk*6 + baseDef*5 + baseHp*0.8 + base.options.length*8) * rarityMul;
+  base.sellValue = Math.floor(base.sellValue);
+
+  return base;
+}
+
+function itemName(it){
+  const r = it.rarity;
+  const slot = it.slot==="weapon" ? "검" : "갑옷";
+  const set = it.setId ? (SETS.find(s=>s.id===it.setId)?.name || "세트") : "";
+  const base = it.identified ? `${slot}` : `미감정 ${slot}`;
+  return `${r} ${set?`[${set}] `:""}${base}`;
+}
+
+function itemDesc(it){
+  if(!it.identified){
+    return [
+      "미감정 아이템",
+      "기본 성능으로는 사용 가능",
+      "감정 시 옵션/세트 정보 확정"
+    ];
   }
-
-  async function loadImageAuto(key){
-    const base = ASSET.bases[key];
-    for (const ext of ASSET.exts){
-      const url = `${base}.${ext}`;
-      const r = await loadImageTry(url);
-      if (r.ok) return r;
-    }
-    return { ok:false, im:null, url:"(not found)" };
+  const lines = [];
+  if(it.baseAtk) lines.push(`기본 공격 +${it.baseAtk}`);
+  if(it.baseDef) lines.push(`기본 방어 +${it.baseDef}`);
+  if(it.baseHp) lines.push(`기본 HP +${it.baseHp}`);
+  it.options.forEach(o=> lines.push(optionText(o)));
+  if(it.setId){
+    const s = SETS.find(x=>x.id===it.setId);
+    if(s) lines.push(`세트: ${s.name}`);
   }
+  return lines;
+}
 
-  async function preloadAssets(){
-    assetTxt.textContent = "ASSET: 로딩중...";
-    assetTxt.className = "chip";
+/* ====== Core Entities / Physics ====== */
+function aabb(ax,ay,aw,ah, bx,by,bw,bh){
+  return ax < bx+bw && ax+aw > bx && ay < by+bh && ay+ah > by;
+}
+function dist2(ax,ay,bx,by){
+  const dx=ax-bx, dy=ay-by;
+  return dx*dx+dy*dy;
+}
 
-    const keys = Object.keys(ASSET.bases);
-    let okN = 0;
-
-    for (const k of keys){
-      const r = await loadImageAuto(k);
-      ASSET.ok[k] = r.ok;
-      ASSET.urlUsed[k] = r.url;
-      if (r.ok){
-        ASSET.img[k] = r.im;
-        okN++;
-        log(`ASSET OK: ${k} <- ${r.url}`);
-      } else {
-        log(`ASSET FAIL: ${k} (png/webp/jpg/jpeg 없음)`);
-      }
-    }
-
-    ASSET.ready = true;
-
-    if (okN === 0){
-      assetTxt.textContent = "ASSET: 없음(도형 모드)";
-      assetTxt.className = "chip warn";
-    } else {
-      assetTxt.textContent = `ASSET: ${okN}/${keys.length} 로드`;
-      assetTxt.className = "chip good";
-    }
+class Entity{
+  constructor(x,y,w,h){
+    this.x=x; this.y=y;
+    this.vx=0; this.vy=0;
+    this.w=w; this.h=h;
+    this.dead=false;
   }
+}
 
-  function drawSpriteOrCircle(kind, x, y, r){
-    const mapKey =
-      kind==="player" ? "player" :
-      kind==="slime"  ? "slime"  :
-      kind==="elite"  ? "elite"  :
-      kind==="boss"   ? "boss"   : null;
-
-    const has = mapKey && ASSET.ok[mapKey] && ASSET.img[mapKey];
-
-    if (has){
-      const im = ASSET.img[mapKey];
-      const size = r * 2.4;
-      ctx.drawImage(im, x - size/2, y - size/2, size, size);
-      return;
-    }
-
-    ctx.fillStyle =
-      kind==="boss" ? "rgba(255,106,106,0.92)" :
-      kind==="elite"? "rgba(106,167,255,0.92)" :
-      kind==="slime"? "rgba(106,227,123,0.92)" :
-                      "rgba(255,255,255,0.95)";
-    ctx.beginPath();
-    ctx.arc(x, y, r, 0, Math.PI*2);
-    ctx.fill();
+/* ====== Particle FX ====== */
+class HitFx extends Entity{
+  constructor(x,y){
+    super(x,y,32,32);
+    this.t=0;
+    this.life=0.22;
   }
-
-  function drawBg(w,h){
-    if (ASSET.ok.bg && ASSET.img.bg){
-      const im = ASSET.img.bg;
-      const iw = im.width, ih = im.height;
-      const s = Math.max(w/iw, h/ih);
-      const dw = iw*s, dh = ih*s;
-      ctx.drawImage(im, (w-dw)/2, (h-dh)/2, dw, dh);
-      return;
-    }
-    ctx.fillStyle = "rgba(0,0,0,0.25)";
-    ctx.fillRect(0,0,w,h);
+  update(dt){
+    this.t += dt;
+    if(this.t>=this.life) this.dead=true;
   }
-
-  // =========================================================
-  //  GAME (v4.4 로직 유지)
-  // =========================================================
-  const Game = {
-    scene: "stage",
-    stageId: "1-1",
-    stageTime: 0,
-    timeLimit: 300,
-    autoTarget: true,
-    autoAttack: true,
-    kills: 0,
-  };
-
-  const Player = {
-    x: 0, y: 0,
-    r: 14,
-    spd: 240,
-    dashTime: 0,
-    dashCd: 0,
-    atk: 16,
-    atkRange: 36,
-    atkCd: 0.28,
-    atkTimer: 0,
-  };
-
-  const Mobs = [];
-  let mobSeq = 1;
-  const Inv = [];
-
-  function syncHUD(){
-    sceneTxt.textContent = `장면: ${Game.scene==="stage" ? "스테이지" : "보스"}`;
-    stageTxt.textContent = `스테이지: ${Game.stageId}`;
-    btnToggleTarget.classList.toggle("on", Game.autoTarget);
-    btnToggleAtk.classList.toggle("on", Game.autoAttack);
-    killTxt.textContent = `처치: ${Game.kills}`;
-    invTxt.textContent = `인벤: ${Inv.length}`;
-  }
-
-  function mobTemplate(kind){
-    if (kind === "boss")  return { r: 36, hp: 320, spd: 70 };
-    if (kind === "elite") return { r: 18, hp: 90,  spd: 120 };
-    return { r: 14, hp: 55,  spd: 95 };
-  }
-
-  function respawnMobs(){
-    Mobs.length = 0;
-    mobSeq = 1;
-
-    if (Game.scene === "stage"){
-      for (let i=0;i<8;i++){
-        const kind = Math.random()<0.2 ? "elite" : "slime";
-        const t = mobTemplate(kind);
-        Mobs.push({
-          id: mobSeq++,
-          kind,
-          x:(Math.random()*2-1)*260,
-          y:(Math.random()*2-1)*170,
-          r:t.r,
-          hp:t.hp,
-          hpMax:t.hp,
-          spd:t.spd,
-          phase: Math.random()*Math.PI*2,
-          hitFlash: 0,
-          knockX: 0,
-          knockY: 0,
-        });
-      }
-    } else {
-      const t = mobTemplate("boss");
-      Mobs.push({
-        id: mobSeq++,
-        kind:"boss",
-        x: 260, y: 0,
-        r:t.r,
-        hp:t.hp,
-        hpMax:t.hp,
-        spd:t.spd,
-        phase: Math.random()*Math.PI*2,
-        hitFlash: 0,
-        knockX: 0,
-        knockY: 0,
-      });
-    }
-    log(`MOBS: ${Mobs.length} spawned`);
-  }
-
-  function startStage(){
-    Game.scene = "stage";
-    Game.stageId = "1-1";
-    Game.stageTime = 0;
-    Game.timeLimit = 300;
-    Player.x = 0; Player.y = 0;
-    Player.dashTime = 0; Player.dashCd = 0;
-    Player.atkTimer = 0;
-    respawnMobs();
-    syncHUD();
-    toast("<b>스테이지 1-1</b> 시작", 900);
-  }
-
-  function startBoss(){
-    Game.scene = "boss";
-    Game.stageId = "BOSS";
-    Game.stageTime = 0;
-    Game.timeLimit = 240;
-    Player.x = 0; Player.y = 0;
-    Player.dashTime = 0; Player.dashCd = 0;
-    Player.atkTimer = 0;
-    respawnMobs();
-    syncHUD();
-    toast("<b>보스전</b> 시작", 900);
-  }
-
-  function resetAll(){
-    Game.kills = 0;
-    Inv.length = 0;
-    startStage();
-    toast("<b>리셋 완료</b>", 800);
-  }
-
-  // ---------- Joystick ----------
-  const Joy = { active:false, id:null, cx:0, cy:0, x:0, y:0, maxR:56 };
-  function resetStick(){ stick.style.transform = "translate(-50%,-50%)"; }
-  function setStick(dx,dy){
-    const r = Math.hypot(dx,dy);
-    let sx=dx, sy=dy;
-    if (r > Joy.maxR){
-      const k = Joy.maxR / r;
-      sx*=k; sy*=k;
-    }
-    stick.style.transform = `translate(calc(-50% + ${sx}px), calc(-50% + ${sy}px))`;
-  }
-  function joyStart(clientX, clientY){
-    Joy.active = true;
-    const rect = joy.getBoundingClientRect();
-    Joy.cx = rect.left + rect.width/2;
-    Joy.cy = rect.top  + rect.height/2;
-    const dx = clientX - Joy.cx;
-    const dy = clientY - Joy.cy;
-    setStick(dx,dy);
-    Joy.x = clamp(dx/Joy.maxR, -1, 1);
-    Joy.y = clamp(dy/Joy.maxR, -1, 1);
-  }
-  function joyMove(clientX, clientY){
-    if (!Joy.active) return;
-    const dx = clientX - Joy.cx;
-    const dy = clientY - Joy.cy;
-    setStick(dx,dy);
-    Joy.x = clamp(dx/Joy.maxR, -1, 1);
-    Joy.y = clamp(dy/Joy.maxR, -1, 1);
-  }
-  function joyEnd(){
-    Joy.active = false;
-    Joy.x = 0; Joy.y = 0;
-    resetStick();
-  }
-
-  joy.addEventListener("pointerdown", (e)=>{ if (e.cancelable) e.preventDefault(); joyStart(e.clientX, e.clientY); }, {passive:false});
-  joy.addEventListener("pointermove", (e)=>{ if (e.cancelable) e.preventDefault(); joyMove(e.clientX, e.clientY); }, {passive:false});
-  joy.addEventListener("pointerup",   (e)=>{ if (e.cancelable) e.preventDefault(); joyEnd(); }, {passive:false});
-  joy.addEventListener("pointercancel",(e)=>{ if (e.cancelable) e.preventDefault(); joyEnd(); }, {passive:false});
-
-  // ---------- Combat ----------
-  function nearestMobInRange(range){
-    let best=null, bestD=1e9;
-    for (const m of Mobs){
-      if (m.hp<=0) continue;
-      const d = dist(Player.x, Player.y, m.x, m.y);
-      if (d<bestD){ bestD=d; best=m; }
-    }
-    if (!best) return null;
-    return bestD <= range + best.r ? best : null;
-  }
-
-  function dealDamage(m, dmg, knock=120){
-    m.hp = Math.max(0, m.hp - dmg);
-    m.hitFlash = 0.12;
-
-    const dx = m.x - Player.x;
-    const dy = m.y - Player.y;
-    const len = Math.hypot(dx,dy) || 1;
-    m.knockX += (dx/len) * knock;
-    m.knockY += (dy/len) * knock;
-
-    if (m.hp<=0){
-      Game.kills += 1;
-      if (Math.random()<0.40){
-        Inv.push({ name:"미감정 장비", desc:"기본공격 +1~3 (잠재: 미공개)" });
-        toast("드랍: <b>미감정 장비</b>", 900);
-      }
-      syncHUD();
+  draw(ctx, cam){
+    const px = Math.floor(this.x - cam.x);
+    const py = Math.floor(this.y - cam.y);
+    if(assets.fxHit){
+      // fx sheet: assume 1 row, 4 frames
+      const frames = 4;
+      const fw = Math.floor(assets.fxHit.width/frames);
+      const fh = assets.fxHit.height;
+      const idx = clamp(Math.floor((this.t/this.life)*frames),0,frames-1);
+      ctx.drawImage(assets.fxHit, idx*fw, 0, fw, fh, px-16, py-16, 64, 64);
+    }else{
+      ctx.save();
+      ctx.globalAlpha = 0.9*(1-this.t/this.life);
+      ctx.beginPath();
+      ctx.arc(px, py, 20*(1-this.t/this.life), 0, Math.PI*2);
+      ctx.strokeStyle="rgba(255,220,140,.9)";
+      ctx.lineWidth=3;
+      ctx.stroke();
+      ctx.restore();
     }
   }
+}
 
-  function tryAttack(src="btn"){
-    if (Player.atkTimer>0) return;
-    Player.atkTimer = Player.atkCd;
-
-    const target = nearestMobInRange(Player.atkRange);
-    if (!target){ toast("헛손질", 450); return; }
-
-    const dmg = Player.atk + (Math.random()<0.18 ? 10 : 0);
-    dealDamage(target, dmg, target.kind==="boss" ? 80 : 140);
+/* ====== Loot ====== */
+class Loot extends Entity{
+  constructor(x,y, kind="coin", amount=1, item=null){
+    super(x,y,18,18);
+    this.kind=kind; // coin/item
+    this.amount=amount;
+    this.item=item;
+    this.life=10;
+    this.t=0;
+    this.bob=rand(0,Math.PI*2);
   }
-
-  function resolvePlayerMobCollisions(){
-    for (const m of Mobs){
-      if (m.hp<=0) continue;
-      const dx = Player.x - m.x;
-      const dy = Player.y - m.y;
-      const d = Math.hypot(dx,dy) || 0.0001;
-      const minD = Player.r + m.r;
-      if (d < minD){
-        const push = (minD - d);
-        const nx = dx / d;
-        const ny = dy / d;
-        Player.x += nx * push;
-        Player.y += ny * push;
-        m.x -= nx * (push*0.20);
-        m.y -= ny * (push*0.20);
-      }
-    }
+  update(dt){
+    this.t += dt;
+    this.life -= dt;
+    if(this.life<=0) this.dead=true;
   }
-
-  function moveMobs(dt){
-    for (const m of Mobs){
-      if (m.hp<=0) continue;
-      m.phase += dt * (m.kind==="boss" ? 1.1 : 1.8);
-      m.hitFlash = Math.max(0, m.hitFlash - dt);
-
-      const kDamp=10;
-      m.knockX = m.knockX * Math.max(0, 1 - kDamp*dt);
-      m.knockY = m.knockY * Math.max(0, 1 - kDamp*dt);
-
-      const dx = Player.x - m.x;
-      const dy = Player.y - m.y;
-      const d = Math.hypot(dx,dy) || 1;
-
-      const desired = (m.kind==="boss") ? 80 : 60;
-      const speed = m.spd * (d > desired ? 1.0 : 0.25);
-
-      const nx = dx / d;
-      const ny = dy / d;
-      const wob = Math.sin(m.phase) * 0.35;
-
-      m.x += (nx * speed + (-ny * wob * 18)) * dt + m.knockX * dt;
-      m.y += (ny * speed + ( nx * wob * 18)) * dt + m.knockY * dt;
-    }
-  }
-
-  // ---------- Buttons ----------
-  bind(btnStage, "스테이지", startStage);
-  bind(btnBoss, "보스", startBoss);
-  bind(btnRespawn, "몹재생성", ()=>{ respawnMobs(); toast("몹 재생성", 800); });
-  bind(btnReset, "리셋", resetAll);
-
-  bind(btnAttack, "공격", ()=> tryAttack("btn"));
-  bind(btnDash, "대시", ()=>{
-    if (Player.dashCd>0){ toast("대시 쿨타임", 500); return; }
-    Player.dashTime = 0.12;
-    Player.dashCd = 0.75;
-    toast("대시!", 500);
-  });
-
-  bind(btnToggleTarget, "오토타겟", ()=>{
-    Game.autoTarget = !Game.autoTarget;
-    btnToggleTarget.classList.toggle("on", Game.autoTarget);
-    toast(`오토 타겟: <b>${Game.autoTarget?"ON":"OFF"}</b>`, 900);
-  });
-  bind(btnToggleAtk, "오토공격", ()=>{
-    Game.autoAttack = !Game.autoAttack;
-    btnToggleAtk.classList.toggle("on", Game.autoAttack);
-    toast(`오토 공격: <b>${Game.autoAttack?"ON":"OFF"}</b>`, 900);
-  });
-
-  bind(btnPick, "줍기", ()=>{
-    toast(Inv.length ? `줍기: <b>${Inv[Inv.length-1].name}</b>` : "줍기: 인벤 비어있음", 900);
-    syncHUD();
-  });
-
-  // ---------- Loop ----------
-  let last = now();
-  let fpsAcc=0, fpsFrames=0;
-
-  function update(dt){
-    Game.stageTime += dt;
-    const left = Math.max(0, Math.ceil(Game.timeLimit - Game.stageTime));
-    const mm = String(Math.floor(left/60)).padStart(2,"0");
-    const ss = String(left%60).padStart(2,"0");
-    timerTxt.textContent = `제한: ${mm}:${ss}`;
-    if (left<=0){ startStage(); return; }
-
-    Player.atkTimer = Math.max(0, Player.atkTimer - dt);
-
-    const mx = Joy.active ? Joy.x : 0;
-    const my = Joy.active ? Joy.y : 0;
-    const mlen = Math.hypot(mx,my);
-
-    Player.dashTime = Math.max(0, Player.dashTime - dt);
-    Player.dashCd   = Math.max(0, Player.dashCd - dt);
-    const spd = Player.spd * (Player.dashTime>0 ? 2.4 : 1.0);
-
-    const nx = mlen>1e-6 ? mx/mlen : 0;
-    const ny = mlen>1e-6 ? my/mlen : 0;
-
-    Player.x += nx * spd * dt;
-    Player.y += ny * spd * dt;
-
-    moveMobs(dt);
-    resolvePlayerMobCollisions();
-
-    // 죽은 몹 제거
-    for (let i=Mobs.length-1;i>=0;i--){
-      if (Mobs[i].hp<=0) Mobs.splice(i,1);
-    }
-
-    // 오토 공격
-    if (Game.autoAttack){
-      const t = nearestMobInRange(Player.atkRange);
-      if (t && Player.atkTimer<=0) tryAttack("auto");
-    }
-  }
-
-  function draw(){
-    const w = window.innerWidth;
-    const h = window.innerHeight;
-
-    ctx.clearRect(0,0,w,h);
-    drawBg(w,h);
-
+  draw(ctx, cam){
+    const px = Math.floor(this.x - cam.x);
+    const py = Math.floor(this.y - cam.y + Math.sin(this.t*5+this.bob)*2);
     ctx.save();
-    ctx.translate(w/2, h/2);
-
-    // 몬스터 + HP바
-    for (const m of Mobs){
-      drawSpriteOrCircle(m.kind, m.x, m.y, m.r);
-
-      const barW = Math.max(34, m.r*2.2);
-      const barH = 6;
-      const bx = m.x - barW/2;
-      const by = m.y - m.r - 14;
-
-      ctx.fillStyle = "rgba(0,0,0,0.45)";
-      ctx.fillRect(bx, by, barW, barH);
-
-      const hpRatio = m.hpMax>0 ? (m.hp/m.hpMax) : 0;
-      ctx.fillStyle = "rgba(255,255,255,0.78)";
-      ctx.fillRect(bx, by, barW*hpRatio, barH);
-
-      ctx.strokeStyle = "rgba(255,255,255,0.18)";
-      ctx.strokeRect(bx, by, barW, barH);
+    if(this.kind==="coin"){
+      ctx.fillStyle="rgba(255,210,80,.95)";
+      ctx.beginPath(); ctx.arc(px,py,7,0,Math.PI*2); ctx.fill();
+    }else{
+      ctx.fillStyle="rgba(90,160,255,.95)";
+      ctx.beginPath(); ctx.arc(px,py,7,0,Math.PI*2); ctx.fill();
+      ctx.strokeStyle="rgba(240,240,255,.8)";
+      ctx.lineWidth=2; ctx.stroke();
     }
-
-    // 플레이어
-    drawSpriteOrCircle("player", Player.x, Player.y, Player.r);
-
-    // 공격 범위(희미)
-    ctx.strokeStyle = "rgba(255,255,255,0.10)";
-    ctx.beginPath();
-    ctx.arc(Player.x, Player.y, Player.atkRange, 0, Math.PI*2);
-    ctx.stroke();
-
     ctx.restore();
   }
+}
 
-  function loop(){
-    const t = now();
-    let dt = (t - last)/1000;
-    last = t;
-    dt = Math.min(0.05, Math.max(0, dt));
+/* ====== Monster ====== */
+class Monster extends Entity{
+  constructor(x,y, type="slime", elite=false, level=1){
+    super(x,y,36,28);
+    this.type=type;
+    this.elite=elite;
+    this.level=level;
 
-    fpsAcc += dt; fpsFrames++;
-    if (fpsAcc >= 0.4){
-      const fps = Math.round(fpsFrames / fpsAcc);
-      fpsAcc = 0; fpsFrames = 0;
-      fpsTxt.textContent = `FPS: ${fps}`;
-    }
+    const baseHp = elite ? 65 : 40;
+    this.hpMax = baseHp + Math.floor(level*5);
+    this.hp = this.hpMax;
 
-    update(dt);
-    draw();
-    updateToasts();
-    requestAnimationFrame(loop);
+    this.atk = elite ? 10+level*1.4 : 7+level*1.2;
+    this.def = elite ? 2+Math.floor(level/2) : 1+Math.floor(level/3);
+
+    this.speed = elite ? 72 : 60;
+    this.contactCD = 0;  // attack cooldown so it doesn't spam too fast
+    this.hitFlash = 0;
+    this.knock = 0;
+    this.face = -1;
   }
 
-  // ---------- Start ----------
-  syncHUD();
-  toast("<b>v4.5 로딩</b>…", 900);
+  takeDamage(dmg, knockDir){
+    const real = Math.max(1, Math.floor(dmg - this.def*0.6));
+    this.hp -= real;
+    this.hitFlash = 0.12;
+    this.knock = 0.12;
+    this.vx += knockDir * 140;
+    if(this.hp <= 0){
+      this.dead = true;
+    }
+    return real;
+  }
 
-  preloadAssets().finally(()=>{
-    startStage();
-    toast("이미지는 <b>확장자 자동 탐색</b>으로 로드됨", 1400);
-    loop();
+  update(dt, player, world){
+    this.hitFlash = Math.max(0, this.hitFlash - dt);
+    this.contactCD = Math.max(0, this.contactCD - dt);
+    this.knock = Math.max(0, this.knock - dt);
+
+    // simple AI: approach player
+    const dx = (player.x + player.w/2) - (this.x + this.w/2);
+    this.face = dx>=0 ? 1 : -1;
+
+    const inChase = Math.abs(dx) < 360;
+    if(inChase){
+      if(this.knock<=0){
+        this.vx = this.face * this.speed;
+      }
+    }else{
+      this.vx *= 0.92;
+    }
+
+    // gravity + move (stable axis separation)
+    world.moveEntity(this, dt);
+
+    // contact damage
+    if(!player.dead && this.contactCD<=0){
+      if(aabb(this.x,this.y,this.w,this.h, player.x,player.y,player.w,player.h)){
+        player.takeDamage(this.atk, this.face);
+        this.contactCD = 0.45; // not too fast, but consistent
+      }
+    }
+  }
+
+  draw(ctx, cam){
+    const px = Math.floor(this.x - cam.x);
+    const py = Math.floor(this.y - cam.y);
+
+    // sprite: slime_sheet assumed 4 frames row, 2 rows( normal/elite ) if exists
+    if(assets.slimeSheet){
+      const cols = 4;
+      const fw = Math.floor(assets.slimeSheet.width/cols);
+      const fh = Math.floor(assets.slimeSheet.height/2) || assets.slimeSheet.height;
+      const row = this.elite ? 1 : 0;
+      const t = (now()/1000);
+      const frame = Math.floor(t*6) % cols;
+      ctx.save();
+      if(this.hitFlash>0){
+        ctx.globalAlpha = 0.85;
+      }
+      ctx.translate(px + this.w/2, py + this.h/2);
+      ctx.scale(this.face, 1);
+      ctx.drawImage(assets.slimeSheet, frame*fw, row*fh, fw, fh, -this.w/2, -this.h/2, this.w, this.h);
+      ctx.restore();
+    }else{
+      ctx.save();
+      ctx.fillStyle = this.elite ? "rgba(255,90,120,.95)" : "rgba(90,255,140,.92)";
+      if(this.hitFlash>0) ctx.fillStyle = "rgba(255,240,200,.92)";
+      ctx.beginPath();
+      ctx.ellipse(px+this.w/2, py+this.h/2, this.w/2, this.h/2, 0, 0, Math.PI*2);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // hp bar
+    const bw = this.w;
+    const bh = 5;
+    const ratio = clamp(this.hp/this.hpMax, 0, 1);
+    ctx.save();
+    ctx.fillStyle="rgba(0,0,0,.55)";
+    ctx.fillRect(px, py-10, bw, bh);
+    ctx.fillStyle=this.elite?"rgba(255,120,150,.95)":"rgba(130,255,160,.95)";
+    ctx.fillRect(px, py-10, bw*ratio, bh);
+    ctx.restore();
+  }
+}
+
+/* ====== Player ====== */
+class Player extends Entity{
+  constructor(x,y){
+    super(x,y,34,44);
+    this.face = 1;
+
+    this.hpMaxBase = 120;
+    this.hp = 120;
+    this.hpMax = 120;
+
+    this.spMaxBase = 100;
+    this.sp = 100;
+    this.spMax = 100;
+
+    this.atkBase = 18;
+    this.defBase = 2;
+
+    this.atk = this.atkBase;
+    this.def = this.defBase;
+
+    this.crit = 5;        // %
+    this.lifesteal = 0.0; // %
+    this.regen = 0.0;     // after-combat regen (per sec)
+
+    this.onGround = false;
+    this.invuln = 0;        // i-frame after hit (does NOT reset by Z/X spam)
+    this.hitCD = 0;
+
+    this.attackCD = 0;
+    this.skillCD = 0;
+
+    this.inCombatTimer = 0; // counts down; if >0, considered in combat
+
+    this.potions = 3;
+    this.potionCD = 0;
+
+    this.equip = { weapon:null, armor:null };
+
+    this.animT = 0;
+    this.jumpLock = 0;
+  }
+
+  recalcStats(inventory){
+    let hpMax = this.hpMaxBase;
+    let spMax = this.spMaxBase;
+    let atk = this.atkBase;
+    let def = this.defBase;
+    let crit = 5;
+    let ls = 0;
+    let regen = 0;
+
+    const setsCount = {};
+    const addFromItem = (it)=>{
+      if(!it) return;
+      // identified or not: base stats always apply
+      atk += (it.baseAtk||0);
+      def += (it.baseDef||0);
+      hpMax += (it.baseHp||0);
+
+      // options: only if identified
+      if(it.identified){
+        for(const o of it.options){
+          if(o.k==="atk") atk += o.v;
+          if(o.k==="def") def += o.v;
+          if(o.k==="hp") hpMax += o.v;
+          if(o.k==="crit") crit += o.v;
+          if(o.k==="ls") ls += o.v;
+          if(o.k==="regen") regen += o.v*0.3;
+        }
+      }
+      if(it.setId){
+        setsCount[it.setId] = (setsCount[it.setId]||0)+1;
+      }
+    };
+
+    addFromItem(this.equip.weapon);
+    addFromItem(this.equip.armor);
+
+    // apply set effects (only if both pieces are identified? -> simpler: counts regardless, but effect needs identified items)
+    for(const sid of Object.keys(setsCount)){
+      const c = setsCount[sid];
+      const s = SETS.find(x=>x.id===sid);
+      if(!s) continue;
+
+      if(c >= 2){
+        if(s.two.lifesteal){ ls += s.two.lifesteal*100; } // store as percent now, later convert
+        if(s.two.regen){ regen += s.two.regen; }
+      }
+      if(c >= 3){
+        if(s.three.atkPct){ atk = Math.floor(atk * (1 + s.three.atkPct)); }
+        if(s.three.hpMaxPct){ hpMax = Math.floor(hpMax * (1 + s.three.hpMaxPct)); }
+      }
+    }
+
+    this.hpMax = Math.max(40, hpMax);
+    this.spMax = Math.max(40, spMax);
+    this.atk = Math.max(1, atk);
+    this.def = Math.max(0, def);
+    this.crit = clamp(crit, 0, 80);
+    this.lifesteal = Math.max(0, ls/100); // convert to fraction
+    this.regen = Math.max(0, regen);
+
+    // clamp current bars
+    this.hp = clamp(this.hp, 0, this.hpMax);
+    this.sp = clamp(this.sp, 0, this.spMax);
+  }
+
+  takeDamage(raw, dir){
+    // This is the fix: Z/X spam does NOT prevent HP decrease.
+    // Only invuln timer controls damage gating.
+    if(this.invuln > 0) return;
+
+    const real = Math.max(1, Math.floor(raw - this.def*0.5));
+    this.hp -= real;
+    this.invuln = 0.42; // short i-frame; consistent
+    this.inCombatTimer = 2.2; // enter combat
+    // knockback
+    this.vx += dir * 120;
+    if(this.hp <= 0){
+      this.hp = 0;
+      this.dead = true;
+      game.toast("사망... (메뉴로 돌아갑니다)");
+      setTimeout(()=> game.exitToMenu(), 900);
+    }
+  }
+
+  heal(amount){
+    this.hp = clamp(this.hp + amount, 0, this.hpMax);
+  }
+
+  spendSp(cost){
+    if(this.sp < cost) return false;
+    this.sp -= cost;
+    return true;
+  }
+
+  doPotion(){
+    if(this.potionCD>0) return;
+    if(this.potions<=0) { game.toast("포션이 없습니다"); return; }
+    this.potions--;
+    this.potionCD = 2.0;
+    // heal 35% max
+    const healAmt = Math.floor(this.hpMax * 0.35);
+    this.heal(healAmt);
+    game.toast(`포션 사용 +${healAmt}HP`);
+  }
+
+  tryAttack(){
+    if(this.attackCD>0) return false;
+    this.attackCD = 0.22;
+    return true;
+  }
+
+  trySkill(){
+    if(this.skillCD>0) return false;
+    const cost = 18;
+    if(!this.spendSp(cost)){
+      game.toast("SP 부족");
+      return false;
+    }
+    this.skillCD = 1.8;
+    return true;
+  }
+
+  update(dt, world){
+    this.animT += dt;
+
+    // cooldowns
+    this.invuln = Math.max(0, this.invuln - dt);
+    this.attackCD = Math.max(0, this.attackCD - dt);
+    this.skillCD = Math.max(0, this.skillCD - dt);
+    this.potionCD = Math.max(0, this.potionCD - dt);
+    this.jumpLock = Math.max(0, this.jumpLock - dt);
+
+    // combat timer
+    this.inCombatTimer = Math.max(0, this.inCombatTimer - dt);
+
+    // regen
+    if(this.inCombatTimer<=0){
+      // out of combat: base regen
+      this.heal(dt * 2.4); // slow natural regen
+      // plus gear/set regen
+      if(this.regen>0) this.heal(dt * this.regen);
+    }
+
+    // sp regen always
+    this.sp = clamp(this.sp + dt*10.5, 0, this.spMax);
+
+    // move input
+    const accel = 520;
+    const maxSpd = 170;
+    const friction = 0.86;
+
+    let move = 0;
+    if(input.left) move -= 1;
+    if(input.right) move += 1;
+
+    // auto move / chase handled by game (sets moveAssist)
+    if(game.autoMoveActive()){
+      move = game.autoMoveDirection(); // -1/0/1
+    }
+
+    if(move !== 0){
+      this.face = move>0 ? 1 : -1;
+      this.vx += move * accel * dt;
+      this.vx = clamp(this.vx, -maxSpd, maxSpd);
+    }else{
+      this.vx *= Math.pow(friction, dt*60);
+      if(Math.abs(this.vx) < 2) this.vx = 0;
+    }
+
+    // jump
+    if((input.jump || game.autoJumpRequested) && this.onGround && this.jumpLock<=0){
+      this.vy = -360;
+      this.onGround = false;
+      this.jumpLock = 0.12;
+    }
+
+    // apply gravity + stable movement
+    world.moveEntity(this, dt);
+
+    // attack inputs
+    if(input.potion){
+      // one-shot behavior
+      input.potion = false;
+      this.doPotion();
+    }
+    if(input.attack){
+      game.queueAttack();
+    }
+    if(input.skill){
+      game.queueSkill();
+    }
+  }
+
+  draw(ctx, cam){
+    const px = Math.floor(this.x - cam.x);
+    const py = Math.floor(this.y - cam.y);
+
+    // sprite
+    if(assets.playerSheet){
+      // assume 4 frames, 1 row
+      const cols = 4;
+      const fw = Math.floor(assets.playerSheet.width/cols);
+      const fh = assets.playerSheet.height;
+      const moving = Math.abs(this.vx) > 10;
+      const frame = moving ? (Math.floor(this.animT*10) % cols) : 0;
+
+      ctx.save();
+      if(this.invuln>0){
+        ctx.globalAlpha = 0.75;
+      }
+      ctx.translate(px + this.w/2, py + this.h/2);
+      ctx.scale(this.face, 1);
+      ctx.drawImage(assets.playerSheet, frame*fw, 0, fw, fh, -this.w/2, -this.h/2, this.w, this.h);
+      ctx.restore();
+    }else{
+      ctx.save();
+      ctx.fillStyle = this.invuln>0 ? "rgba(180,220,255,.85)" : "rgba(220,240,255,.95)";
+      ctx.fillRect(px, py, this.w, this.h);
+      ctx.fillStyle="rgba(0,0,0,.6)";
+      ctx.fillRect(px+6, py+10, 6, 6);
+      ctx.restore();
+    }
+
+    // shadow
+    ctx.save();
+    ctx.globalAlpha = 0.25;
+    ctx.fillStyle="#000";
+    ctx.beginPath();
+    ctx.ellipse(px+this.w/2, py+this.h+6, this.w*0.38, 6, 0, 0, Math.PI*2);
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+/* ====== World / Collisions (stable axis separation) ====== */
+class World{
+  constructor(){
+    this.groundY = 420; // stable ground line in world coords
+    this.leftWall = 0;
+    this.rightWall = 2400;
+    this.gravity = 980;
+
+    this.platforms = [
+      // simple ground only (avoid jitter)
+    ];
+  }
+
+  moveEntity(ent, dt){
+    // gravity
+    ent.vy += this.gravity * dt;
+
+    // clamp vy
+    ent.vy = clamp(ent.vy, -800, 1200);
+
+    // ---- X axis
+    ent.x += ent.vx * dt;
+    if(ent.x < this.leftWall){ ent.x = this.leftWall; ent.vx = 0; }
+    if(ent.x + ent.w > this.rightWall){ ent.x = this.rightWall - ent.w; ent.vx = 0; }
+
+    // ---- Y axis
+    ent.y += ent.vy * dt;
+
+    // ground collision (single, stable)
+    const gy = this.groundY;
+    if(ent.y + ent.h >= gy){
+      ent.y = gy - ent.h;
+      ent.vy = 0;
+      if(ent instanceof Player) ent.onGround = true;
+    }else{
+      if(ent instanceof Player) ent.onGround = false;
+    }
+
+    // no other platforms => no oscillation
+  }
+}
+
+/* ====== Camera (no up-down shake) ====== */
+class Camera{
+  constructor(){
+    this.x = 0;
+    this.y = 0;
+  }
+  update(dt, player, world){
+    // Follow X smoothly
+    const targetX = player.x + player.w/2 - BASE_W/2;
+    this.x = lerp(this.x, targetX, 1 - Math.pow(0.001, dt)); // smooth
+
+    // Y: keep mostly fixed to prevent vertical jitter.
+    // Allow small deadzone tracking only if player goes too high.
+    const baseY = 0; // keep stable
+    const playerMidY = player.y + player.h/2;
+    const desiredY = clamp(playerMidY - BASE_H*0.55, -50, 160); // limited range
+    const dy = desiredY - this.y;
+    const dead = 18;
+    if(Math.abs(dy) > dead){
+      this.y = lerp(this.y, desiredY, 1 - Math.pow(0.0008, dt));
+    }else{
+      this.y = lerp(this.y, baseY, 1 - Math.pow(0.0005, dt));
+    }
+
+    // Clamp to world
+    this.x = clamp(this.x, 0, world.rightWall - BASE_W);
+    this.y = clamp(this.y, -60, 220);
+  }
+}
+
+/* ====== UI Modals inside HUD Panel (simple text-based) ====== */
+function fmt(n){ return Math.floor(n).toString(); }
+
+/* ====== Game ====== */
+class Game{
+  constructor(){
+    this.world = new World();
+    this.cam = new Camera();
+    this.player = new Player(120, this.world.groundY-44);
+
+    this.monsters = [];
+    this.loot = [];
+    this.fx = [];
+
+    // stage system
+    this.stage = { a:1, b:1 };
+    this.stageTarget = 10;
+    this.kills = 0;
+
+    this.timeLimit = 300; // seconds (5 min)
+    this.timeLeft = this.timeLimit;
+
+    // boss gate every 5 stages
+    this.isBossStage = false;
+
+    // system toggles
+    this.auto = {
+      target:false,
+      attack:false,
+      loot:false,
+      moveLocked:true,
+      move:false
+    };
+
+    // inventory & economy
+    this.gold = 0;
+    this.inventory = [];
+    this.tickets = 0; // appraisal tickets
+
+    // UI modal state (kept in panel toastBox)
+    this.uiMode = "none"; // none / inv / daily / achv
+    this.selectedItemId = null;
+
+    // attack queue
+    this.wantAttack = false;
+    this.wantSkill = false;
+
+    // anti-drop flood
+    this.dropCap = 4;
+
+    // progress
+    this.daily = this.resetDaily();
+    this.achv = this.resetAchv();
+
+    // state
+    this.running = false;
+    this.paused = false;
+
+    this.lastToastT = 0;
+    this.toastMsg = "";
+
+    // used by auto jump
+    this.autoJumpRequested = false;
+
+    this.loadFromSave();
+    this.applyStats();
+
+    this.spawnStage();
+  }
+
+  resetDaily(){
+    return {
+      dateKey: this.todayKey(),
+      kill: {cur:0, goal:20, rewardG:120, done:false},
+      clear:{cur:0, goal:2, rewardPotion:1, done:false},
+      loot:{cur:0, goal:6, rewardTicket:1, done:false}
+    };
+  }
+
+  resetAchv(){
+    return {
+      firstDrop:false,
+      firstClear:false,
+      totalKills:0,
+      elites:0,
+      bosses:0,
+      ticketsEarned:0
+    };
+  }
+
+  todayKey(){
+    const d = new Date();
+    return `${d.getFullYear()}-${d.getMonth()+1}-${d.getDate()}`;
+  }
+
+  ensureDaily(){
+    const k = this.todayKey();
+    if(this.daily.dateKey !== k){
+      this.daily = this.resetDaily();
+      this.toast("일일 미션이 갱신되었습니다!");
+    }
+  }
+
+  saveData(){
+    return {
+      stage: this.stage,
+      gold: this.gold,
+      inventory: this.inventory,
+      equip: this.player.equip,
+      potions: this.player.potions,
+      tickets: this.tickets,
+      auto: this.auto,
+      daily: this.daily,
+      achv: this.achv
+    };
+  }
+
+  loadFromSave(){
+    const s = loadSave();
+    if(!s) return;
+
+    try{
+      this.stage = s.stage || this.stage;
+      this.gold = s.gold || 0;
+      this.inventory = Array.isArray(s.inventory) ? s.inventory : [];
+      this.player.equip = s.equip || {weapon:null, armor:null};
+      this.player.potions = (s.potions ?? this.player.potions);
+      this.tickets = (s.tickets ?? 0);
+      if(s.auto){
+        this.auto.target = !!s.auto.target;
+        this.auto.attack = !!s.auto.attack;
+        this.auto.loot = !!s.auto.loot;
+        this.auto.moveLocked = (s.auto.moveLocked ?? true);
+        this.auto.move = !!s.auto.move;
+      }
+      if(s.daily) this.daily = s.daily;
+      if(s.achv) this.achv = s.achv;
+    }catch(e){}
+  }
+
+  applyStats(){
+    this.player.recalcStats(this.inventory);
+  }
+
+  startNew(){
+    clearSave();
+    this.stage = {a:1,b:1};
+    this.gold = 0;
+    this.inventory = [];
+    this.player.equip = {weapon:null, armor:null};
+    this.player.potions = 3;
+    this.tickets = 0;
+    this.auto = {target:false, attack:false, loot:false, moveLocked:true, move:false};
+    this.daily = this.resetDaily();
+    this.achv = this.resetAchv();
+    this.player.hp = this.player.hpMaxBase;
+    this.player.sp = this.player.spMaxBase;
+    this.player.dead = false;
+    this.applyStats();
+    this.spawnStage();
+    saveNow();
+  }
+
+  spawnStage(){
+    this.ensureDaily();
+
+    // stage rules
+    const idx = (this.stage.a-1)*10 + (this.stage.b-1) + 1;
+    this.isBossStage = (this.stage.b % 5 === 0);
+
+    this.stageTarget = this.isBossStage ? 1 : (8 + Math.min(10, this.stage.a*2));
+    this.kills = 0;
+    this.timeLeft = 300;
+
+    // reset entities
+    this.monsters = [];
+    this.loot = [];
+    this.fx = [];
+
+    // player safe position
+    this.player.x = 120;
+    this.player.y = this.world.groundY - this.player.h;
+    this.player.vx = 0; this.player.vy = 0;
+    this.player.dead = false;
+
+    // spawn
+    if(this.isBossStage){
+      // boss: elite big slime
+      const m = new Monster(740, this.world.groundY-34, "slime", true, this.stage.a+2);
+      m.w = 60; m.h = 44;
+      m.hpMax = 210 + this.stage.a*25;
+      m.hp = m.hpMax;
+      m.atk = 18 + this.stage.a*2.2;
+      m.def = 4 + Math.floor(this.stage.a/2);
+      m.speed = 68;
+      this.monsters.push(m);
+      this.toast(`보스문 개방: ${this.stage.a}-${this.stage.b} (BOSS)`);
+    }else{
+      const count = this.stageTarget;
+      for(let i=0;i<count;i++){
+        const elite = (Math.random() < (0.10 + this.stage.a*0.01));
+        const x = randi(520, 1900);
+        const y = this.world.groundY - 28;
+        this.monsters.push(new Monster(x,y,"slime", elite, this.stage.a));
+      }
+      this.toast(`스테이지 ${this.stage.a}-${this.stage.b} 시작`);
+    }
+
+    // lock/unlock auto move: unlock after first clear achievement
+    this.auto.moveLocked = !this.achv.firstClear;
+    if(this.auto.moveLocked) this.auto.move = false;
+
+    this.updateHudPills();
+    this.updateStageInfo();
+  }
+
+  nextStage(){
+    // stage increment
+    this.stage.b++;
+    if(this.stage.b > 10){
+      this.stage.b = 1;
+      this.stage.a++;
+    }
+    saveNow();
+    this.spawnStage();
+  }
+
+  updateStageInfo(){
+    const s = `STAGE ${this.stage.a}-${this.stage.b} ${this.isBossStage ? "(BOSS GATE)" : ""}<br>
+목표: ${this.isBossStage ? "보스 처치" : `몬스터 ${this.stageTarget} 처치`}<br>
+진행: ${this.kills}/${this.stageTarget}<br>
+시간: ${Math.ceil(this.timeLeft)}s<br>
+골드: ${fmt(this.gold)} / 포션: ${this.player.potions} / 감정권: ${this.tickets}`;
+    stageInfo.innerHTML = s;
+  }
+
+  toast(msg){
+    this.toastMsg = msg;
+    this.lastToastT = now();
+    toastBox.textContent = msg;
+  }
+
+  autoMoveActive(){
+    return (this.auto.move && !this.auto.moveLocked && this.running && !this.paused && !this.player.dead);
+  }
+
+  autoMoveDirection(){
+    // priority: target > loot
+    const target = this.getAutoTarget();
+    if(target){
+      const dx = (target.x + target.w/2) - (this.player.x + this.player.w/2);
+      if(Math.abs(dx) > 18) return dx>0 ? 1 : -1;
+      return 0;
+    }
+    if(this.auto.loot && this.loot.length){
+      const l = this.getNearestLoot();
+      if(l){
+        const dx = (l.x) - (this.player.x + this.player.w/2);
+        if(Math.abs(dx) > 18) return dx>0 ? 1 : -1;
+        return 0;
+      }
+    }
+    return 0;
+  }
+
+  getNearestLoot(){
+    let best=null, bestD=1e18;
+    const px = this.player.x + this.player.w/2;
+    const py = this.player.y + this.player.h/2;
+    for(const l of this.loot){
+      const d = dist2(px,py, l.x,l.y);
+      if(d < bestD){
+        bestD = d; best = l;
+      }
+    }
+    return best;
+  }
+
+  getAutoTarget(){
+    if(!this.auto.target) return null;
+    // find closest monster within range
+    let best=null, bestD=1e18;
+    const px = this.player.x + this.player.w/2;
+    const py = this.player.y + this.player.h/2;
+    for(const m of this.monsters){
+      if(m.dead) continue;
+      const d = dist2(px,py, m.x+m.w/2, m.y+m.h/2);
+      if(d < bestD){
+        bestD = d; best = m;
+      }
+    }
+    // limit targeting to 520px
+    if(best && bestD <= 520*520) return best;
+    return null;
+  }
+
+  queueAttack(){
+    // if UI open inventory etc, ignore
+    if(this.uiMode !== "none") return;
+    this.wantAttack = true;
+  }
+  queueSkill(){
+    if(this.uiMode !== "none") return;
+    this.wantSkill = true;
+  }
+
+  performAttack(isSkill=false){
+    const p = this.player;
+    if(p.dead) return;
+
+    if(isSkill){
+      if(!p.trySkill()) return;
+    }else{
+      if(!p.tryAttack()) return;
+    }
+
+    // Attack hitbox in front (stable: does NOT move player y, so no shake)
+    const range = isSkill ? 84 : 56;
+    const hbW = isSkill ? 70 : 54;
+    const hbH = isSkill ? 54 : 40;
+    const hbX = p.face>0 ? (p.x + p.w) : (p.x - hbW);
+    const hbY = p.y + p.h*0.35 - hbH/2;
+
+    // damage
+    const base = p.atk;
+    const dmg = isSkill ? Math.floor(base * 1.25 + 10) : Math.floor(base * 0.85 + 6);
+
+    let hitAny = false;
+    for(const m of this.monsters){
+      if(m.dead) continue;
+      if(aabb(hbX,hbY,hbW,hbH, m.x,m.y,m.w,m.h)){
+        hitAny = true;
+
+        // crit
+        let dealt = dmg;
+        if(Math.random() < (p.crit/100)){
+          dealt = Math.floor(dealt * 1.6);
+        }
+        const real = m.takeDamage(dealt, p.face);
+
+        // lifesteal
+        if(p.lifesteal>0){
+          const healAmt = Math.max(1, Math.floor(real * p.lifesteal));
+          p.heal(healAmt);
+        }
+
+        p.inCombatTimer = 2.2;
+        this.fx.push(new HitFx(m.x+m.w/2, m.y+m.h/2));
+        audio.sfx(audio.sfxHit);
+
+        if(m.dead){
+          this.onMonsterKilled(m);
+        }
+      }
+    }
+
+    if(!hitAny){
+      // small whoosh feedback (optional)
+    }
+
+    // fx for swing (optional simple flash)
+    if(isSkill){
+      this.fx.push(new HitFx(p.x + p.w/2 + p.face*36, p.y + p.h/2));
+    }
+  }
+
+  onMonsterKilled(m){
+    this.kills++;
+    this.achv.totalKills = (this.achv.totalKills||0) + 1;
+    if(m.elite) this.achv.elites = (this.achv.elites||0) + 1;
+    if(this.isBossStage) this.achv.bosses = (this.achv.bosses||0) + 1;
+
+    // daily progress
+    this.daily.kill.cur++;
+    if(m.elite) this.daily.loot.cur += 1; // count elite as extra "loot chance"
+    this.checkDailyRewards();
+
+    // coin always
+    const coin = randi(6, 10) + (m.elite ? randi(8,12) : 0) + (this.isBossStage ? randi(35,55) : 0);
+    this.spawnLoot(m.x+m.w/2, m.y, "coin", coin);
+
+    // item drop probability (rare)
+    const roll = Math.random();
+    const chance = this.isBossStage ? 0.75 : (m.elite ? 0.28 : 0.12);
+    if(roll < chance){
+      // keep drop cap (avoid item flood)
+      const itemsOnGround = this.loot.filter(l=>l.kind==="item").length;
+      if(itemsOnGround < this.dropCap){
+        const slot = Math.random() < 0.55 ? "weapon" : "armor";
+        // set chance
+        const setId = Math.random() < 0.35 ? (Math.random()<0.5 ? "slime" : "gate") : null;
+        const item = createItem({slot, level: this.stage.a, setId});
+        this.spawnLoot(m.x+m.w/2 + rand(-8,8), m.y - 6, "item", 1, item);
+
+        // achievement: first drop
+        if(!this.achv.firstDrop){
+          this.achv.firstDrop = true;
+          this.toast("업적: 첫 드랍 확인! (스테이지 종료 시 감정권 지급)");
+        }
+      }
+    }
+
+    // stage clear check
+    if(this.kills >= this.stageTarget){
+      this.onStageClear();
+    }
+  }
+
+  spawnLoot(x,y, kind, amount, item=null){
+    const l = new Loot(x,y,kind,amount,item);
+    this.loot.push(l);
+  }
+
+  pickupLoot(){
+    const p = this.player;
+    const px = p.x + p.w/2;
+    const py = p.y + p.h/2;
+
+    let picked = false;
+    for(const l of this.loot){
+      if(l.dead) continue;
+      const d = dist2(px,py, l.x, l.y);
+      if(d < 46*46){
+        l.dead = true;
+        picked = true;
+
+        if(l.kind==="coin"){
+          this.gold += l.amount;
+          audio.sfx(audio.sfxCoin);
+        }else{
+          this.inventory.push(l.item);
+          this.daily.loot.cur++;
+          this.checkDailyRewards();
+          if(!this.achv.firstDrop){
+            this.achv.firstDrop = true;
+          }
+          this.toast(`획득: ${itemName(l.item)}`);
+        }
+      }
+    }
+    if(picked){
+      this.updateStageInfo();
+      saveNow();
+    }
+  }
+
+  onStageClear(){
+    // reward chest
+    this.toast(`클리어! 보상 상자 획득`);
+    this.daily.clear.cur++;
+    this.checkDailyRewards();
+
+    // first clear achievement -> unlock auto move/track
+    if(!this.achv.firstClear){
+      this.achv.firstClear = true;
+      this.toast("업적: 첫 클리어! 오토 이동/추적 잠금 해제!");
+      this.auto.moveLocked = false;
+    }
+
+    // stage clear rewards
+    const baseG = 50 + this.stage.a*20 + (this.isBossStage ? 120 : 0);
+    this.gold += baseG;
+
+    // potions as reward
+    const addP = this.isBossStage ? 2 : 1;
+    this.player.potions += addP;
+
+    // appraisal ticket condition:
+    // - if firstDrop achieved at least once, give 1 ticket per clear
+    // - boss gives extra
+    if(this.achv.firstDrop){
+      const t = this.isBossStage ? 2 : 1;
+      this.tickets += t;
+      this.achv.ticketsEarned = (this.achv.ticketsEarned||0) + t;
+      this.toast(`클리어 보상: +${baseG}G, +포션${addP}, +감정권${t}`);
+    }else{
+      this.toast(`클리어 보상: +${baseG}G, +포션${addP}`);
+    }
+
+    // save + next
+    saveNow();
+    setTimeout(()=> this.nextStage(), 650);
+  }
+
+  checkDailyRewards(){
+    // kill
+    if(!this.daily.kill.done && this.daily.kill.cur >= this.daily.kill.goal){
+      this.daily.kill.done = true;
+      this.gold += this.daily.kill.rewardG;
+      this.toast(`일일 보상: 몬스터 처치 완료! +${this.daily.kill.rewardG}G`);
+    }
+    // clear
+    if(!this.daily.clear.done && this.daily.clear.cur >= this.daily.clear.goal){
+      this.daily.clear.done = true;
+      this.player.potions += this.daily.clear.rewardPotion;
+      this.toast(`일일 보상: 스테이지 클리어 완료! +포션${this.daily.clear.rewardPotion}`);
+    }
+    // loot
+    if(!this.daily.loot.done && this.daily.loot.cur >= this.daily.loot.goal){
+      this.daily.loot.done = true;
+      this.tickets += this.daily.loot.rewardTicket;
+      this.toast(`일일 보상: 파밍 완료! +감정권${this.daily.loot.rewardTicket}`);
+    }
+  }
+
+  updateHudPills(){
+    pillAutoTarget.textContent = this.auto.target ? "ON" : "OFF";
+    pillAutoAttack.textContent = this.auto.attack ? "ON" : "OFF";
+    pillAutoLoot.textContent = this.auto.loot ? "ON" : "OFF";
+
+    pillAutoTarget.classList.toggle("on", this.auto.target);
+    pillAutoAttack.classList.toggle("on", this.auto.attack);
+    pillAutoLoot.classList.toggle("on", this.auto.loot);
+
+    if(this.auto.moveLocked){
+      pillAutoMove.textContent = "LOCK";
+      pillAutoMove.classList.remove("on");
+    }else{
+      pillAutoMove.textContent = this.auto.move ? "ON" : "OFF";
+      pillAutoMove.classList.toggle("on", this.auto.move);
+    }
+  }
+
+  toggleAuto(key){
+    if(key==="move"){
+      if(this.auto.moveLocked){
+        this.toast("오토 이동/추적: 잠금(첫 클리어 후 해제)");
+        return;
+      }
+      this.auto.move = !this.auto.move;
+    }else{
+      this.auto[key] = !this.auto[key];
+    }
+    this.updateHudPills();
+    saveNow();
+  }
+
+  toggleInventory(){
+    if(!this.running) return;
+    if(this.uiMode === "inv"){
+      this.uiMode = "none";
+      this.toast("인벤토리 닫힘");
+    }else{
+      this.uiMode = "inv";
+      this.renderInventoryToPanel();
+    }
+  }
+
+  openDaily(){
+    if(!this.running) return;
+    this.uiMode = "daily";
+    this.renderDailyToPanel();
+  }
+
+  openAchv(){
+    if(!this.running) return;
+    this.uiMode = "achv";
+    this.renderAchvToPanel();
+  }
+
+  renderInventoryToPanel(){
+    const p = this.player;
+    const eqW = p.equip.weapon;
+    const eqA = p.equip.armor;
+
+    const lines = [];
+    lines.push(`=== 인벤토리 ===`);
+    lines.push(`골드: ${fmt(this.gold)} / 포션: ${p.potions} / 감정권: ${this.tickets}`);
+    lines.push(`장착(무기): ${eqW ? itemName(eqW) : "(없음)"}`);
+    lines.push(`장착(갑옷): ${eqA ? itemName(eqA) : "(없음)"}`);
+    lines.push(``);
+    lines.push(`보유 아이템: ${this.inventory.length}개`);
+    lines.push(`(모바일: ⚙ 메뉴 패널을 아래로 스크롤하면 버튼들이 계속 보입니다)`);
+    lines.push(``);
+    lines.push(`사용법:`);
+    lines.push(`- 아이템 클릭(아래 버튼) → 장착/해제/감정/판매`);
+    lines.push(``);
+
+    // Build interactive buttons inside panel (DOM)
+    // We'll replace toastBox with a mini "inventory UI"
+    toastBox.innerHTML = "";
+
+    const wrap = document.createElement("div");
+    wrap.className = "mini";
+    wrap.style.whiteSpace = "pre-wrap";
+    wrap.textContent = lines.join("\n");
+    toastBox.appendChild(wrap);
+
+    const btnRow = document.createElement("div");
+    btnRow.style.marginTop="10px";
+    btnRow.style.display="flex";
+    btnRow.style.flexWrap="wrap";
+    btnRow.style.gap="8px";
+
+    const mk = (label, onClick)=>{
+      const b = document.createElement("button");
+      b.className = "menuBtn";
+      b.style.flex="1 1 auto";
+      b.style.minWidth="120px";
+      b.textContent = label;
+      b.addEventListener("click", onClick);
+      return b;
+    };
+
+    btnRow.appendChild(mk("무기 해제", ()=>{
+      p.equip.weapon = null;
+      this.applyStats();
+      this.toast("무기 해제");
+      saveNow();
+      this.renderInventoryToPanel();
+    }));
+    btnRow.appendChild(mk("갑옷 해제", ()=>{
+      p.equip.armor = null;
+      this.applyStats();
+      this.toast("갑옷 해제");
+      saveNow();
+      this.renderInventoryToPanel();
+    }));
+    btnRow.appendChild(mk("모두 저장", ()=>{
+      saveNow();
+      this.toast("저장 완료");
+    }));
+    btnRow.appendChild(mk("닫기", ()=>{
+      this.uiMode="none";
+      this.toast("인벤토리 닫힘");
+      toastBox.textContent="";
+    }));
+
+    toastBox.appendChild(btnRow);
+
+    const list = document.createElement("div");
+    list.style.marginTop="10px";
+    list.style.display="grid";
+    list.style.gridTemplateColumns="1fr 1fr";
+    list.style.gap="8px";
+
+    // item buttons
+    const items = this.inventory.slice().reverse(); // newest first
+    items.forEach((it)=>{
+      const b = document.createElement("button");
+      b.className = "menuBtn";
+      b.style.textAlign="left";
+      b.style.borderColor="rgba(255,255,255,.16)";
+      const color = RARITY_COLOR[it.rarity] || "#fff";
+      b.innerHTML = `<span style="color:${color}; font-weight:1000;">${itemName(it)}</span><br><span style="opacity:.85; font-size:12px;">판매 ${fmt(it.sellValue)}G · ${it.identified ? "감정됨" : "미감정"}</span>`;
+      b.addEventListener("click", ()=> this.openItemActions(it.id));
+      list.appendChild(b);
+    });
+
+    toastBox.appendChild(list);
+    this.updateStageInfo();
+  }
+
+  openItemActions(itemId){
+    const it = this.inventory.find(x=>x.id===itemId);
+    if(!it) return;
+
+    toastBox.innerHTML = "";
+    const color = RARITY_COLOR[it.rarity] || "#fff";
+
+    const title = document.createElement("div");
+    title.className="mini";
+    title.style.whiteSpace="pre-wrap";
+    const desc = itemDesc(it).join("\n");
+    title.innerHTML = `<div style="font-weight:1000; font-size:14px; color:${color};">${itemName(it)}</div>
+<div style="opacity:.9; margin-top:6px; white-space:pre-wrap;">${desc}</div>
+<div style="opacity:.9; margin-top:6px;">판매가: ${fmt(it.sellValue)}G</div>`;
+    toastBox.appendChild(title);
+
+    const row = document.createElement("div");
+    row.style.display="flex";
+    row.style.flexWrap="wrap";
+    row.style.gap="8px";
+    row.style.marginTop="10px";
+
+    const mk = (label, fn)=>{
+      const b = document.createElement("button");
+      b.className="menuBtn";
+      b.style.flex="1 1 auto";
+      b.style.minWidth="120px";
+      b.textContent = label;
+      b.addEventListener("click", fn);
+      return b;
+    };
+
+    row.appendChild(mk("장착", ()=>{
+      if(it.slot==="weapon") this.player.equip.weapon = it;
+      else this.player.equip.armor = it;
+      this.applyStats();
+      this.toast("장착 완료");
+      saveNow();
+      this.renderInventoryToPanel();
+    }));
+
+    row.appendChild(mk("감정", ()=>{
+      if(it.identified){ this.toast("이미 감정됨"); return; }
+      if(this.tickets<=0){ this.toast("감정권이 없습니다"); return; }
+      this.tickets--;
+      it.identified = true;
+      // set is revealed only after identify (already stored)
+      this.applyStats();
+      this.toast("감정 완료!");
+      saveNow();
+      this.openItemActions(it.id);
+    }));
+
+    row.appendChild(mk("판매", ()=>{
+      // prevent selling equipped item? allow, but auto-unequip
+      if(this.player.equip.weapon && this.player.equip.weapon.id===it.id) this.player.equip.weapon = null;
+      if(this.player.equip.armor && this.player.equip.armor.id===it.id) this.player.equip.armor = null;
+
+      const idx = this.inventory.findIndex(x=>x.id===it.id);
+      if(idx>=0){
+        this.inventory.splice(idx,1);
+        this.gold += it.sellValue;
+        this.toast(`판매 완료 +${fmt(it.sellValue)}G`);
+        this.applyStats();
+        saveNow();
+        this.renderInventoryToPanel();
+      }
+    }));
+
+    row.appendChild(mk("뒤로", ()=> this.renderInventoryToPanel()));
+    toastBox.appendChild(row);
+  }
+
+  renderDailyToPanel(){
+    const d = this.daily;
+    toastBox.innerHTML = "";
+    const box = document.createElement("div");
+    box.className="mini";
+    box.style.whiteSpace="pre-wrap";
+    box.textContent =
+`=== 일일 미션 (${d.dateKey}) ===
+
+1) 몬스터 ${d.kill.goal} 처치: ${d.kill.cur}/${d.kill.goal}  ${d.kill.done?"(완료)":"(진행중)"}
+   보상: +${d.kill.rewardG}G
+
+2) 스테이지 ${d.clear.goal} 클리어: ${d.clear.cur}/${d.clear.goal}  ${d.clear.done?"(완료)":"(진행중)"}
+   보상: +포션${d.clear.rewardPotion}
+
+3) 파밍 ${d.loot.goal}회: ${d.loot.cur}/${d.loot.goal}  ${d.loot.done?"(완료)":"(진행중)"}
+   보상: +감정권${d.loot.rewardTicket}
+
+※ 보상은 조건 달성 시 자동 지급`;
+    toastBox.appendChild(box);
+
+    const row = document.createElement("div");
+    row.style.display="flex"; row.style.flexWrap="wrap"; row.style.gap="8px"; row.style.marginTop="10px";
+    const b1 = document.createElement("button");
+    b1.className="menuBtn"; b1.textContent="인벤토리"; b1.addEventListener("click", ()=>{ this.uiMode="inv"; this.renderInventoryToPanel(); });
+    const b2 = document.createElement("button");
+    b2.className="menuBtn"; b2.textContent="닫기"; b2.addEventListener("click", ()=>{ this.uiMode="none"; toastBox.textContent=""; });
+    row.appendChild(b1); row.appendChild(b2);
+    toastBox.appendChild(row);
+  }
+
+  renderAchvToPanel(){
+    const a = this.achv;
+    toastBox.innerHTML = "";
+    const box = document.createElement("div");
+    box.className="mini";
+    box.style.whiteSpace="pre-wrap";
+    box.textContent =
+`=== 업적 ===
+
+- 첫 드랍: ${a.firstDrop ? "완료" : "미완료"}
+- 첫 클리어: ${a.firstClear ? "완료" : "미완료"} (완료 시 오토 이동/추적 해제)
+- 총 처치 수: ${a.totalKills||0}
+- 엘리트 처치: ${a.elites||0}
+- 보스 처치: ${a.bosses||0}
+- 누적 감정권 획득: ${a.ticketsEarned||0}
+
+※ 첫 드랍 이후, 스테이지 종료 보상으로 감정권 지급`;
+    toastBox.appendChild(box);
+
+    const row = document.createElement("div");
+    row.style.display="flex"; row.style.flexWrap="wrap"; row.style.gap="8px"; row.style.marginTop="10px";
+    const b1 = document.createElement("button");
+    b1.className="menuBtn"; b1.textContent="인벤토리"; b1.addEventListener("click", ()=>{ this.uiMode="inv"; this.renderInventoryToPanel(); });
+    const b2 = document.createElement("button");
+    b2.className="menuBtn"; b2.textContent="닫기"; b2.addEventListener("click", ()=>{ this.uiMode="none"; toastBox.textContent=""; });
+    row.appendChild(b1); row.appendChild(b2);
+    toastBox.appendChild(row);
+  }
+
+  exitToMenu(){
+    // hard exit: stop game loop rendering interactions
+    this.running = false;
+    this.paused = false;
+    hudPanel.classList.remove("open");
+    toastBox.textContent = "";
+    this.uiMode = "none";
+
+    audio.stopBgm();
+
+    // show menu
+    menuOverlay.classList.add("open");
+    optionsOverlay.classList.remove("open");
+    btnContinue.disabled = !loadSave();
+
+    this.toastMsg = "";
+    stageInfo.innerHTML = "";
+  }
+
+  startFromMenu(isContinue){
+    // start game loop
+    menuOverlay.classList.remove("open");
+    optionsOverlay.classList.remove("open");
+    hudPanel.classList.remove("open");
+
+    this.running = true;
+    this.paused = false;
+
+    if(!isContinue){
+      // ensure stage fresh
+      this.spawnStage();
+    }else{
+      // continue loads already; just respawn monsters in same stage
+      this.spawnStage();
+    }
+
+    // user gesture: allow bgm
+    audio.playBgm().then(ok=>{
+      if(!ok){
+        this.toast("BGM 자동재생이 차단될 수 있어요. ⚙→오디오 설정에서 '테스트'를 눌러주세요.");
+      }
+    });
+
+    saveNow();
+  }
+
+  updateHudBars(){
+    const p = this.player;
+    const hpR = clamp(p.hp/p.hpMax, 0, 1);
+    const spR = clamp(p.sp/p.spMax, 0, 1);
+    hpFill.style.width = (hpR*100).toFixed(1) + "%";
+    mpFill.style.width = (spR*100).toFixed(1) + "%";
+    hpText.textContent = `HP ${Math.floor(p.hp)}/${p.hpMax}`;
+    mpText.textContent = `SP ${Math.floor(p.sp)}/${p.spMax}`;
+  }
+
+  tick(dt){
+    if(!this.running) return;
+
+    // pause via hud panel open? We keep real-time running but reduce complexity.
+    // We'll pause gameplay when inventory/daily/achv open (so user can read).
+    const uiOpen = (this.uiMode !== "none");
+    this.paused = uiOpen;
+
+    // menu key
+    if(input.menu){
+      input.menu = false;
+      hudPanel.classList.toggle("open");
+    }
+
+    // inventory key
+    if(input.inv){
+      input.inv = false;
+      this.toggleInventory();
+    }
+
+    // panel toggles
+    // (pills clickable)
+    // handled below by listeners
+
+    if(this.paused){
+      this.updateHudBars();
+      this.updateStageInfo();
+      return;
+    }
+
+    // time limit
+    this.timeLeft -= dt;
+    if(this.timeLeft <= 0){
+      this.timeLeft = 0;
+      this.player.takeDamage(9999, 0);
+      return;
+    }
+
+    // auto attack logic
+    if(this.auto.attack){
+      const t = this.getAutoTarget();
+      if(t){
+        // if close, attack; else if auto move enabled, close the distance
+        const dx = (t.x + t.w/2) - (this.player.x + this.player.w/2);
+        if(Math.abs(dx) < 90){
+          this.wantAttack = true;
+        }
+      }
+    }
+    // auto loot logic
+    if(this.auto.loot){
+      this.pickupLoot();
+    }
+
+    // player update (movement + potion input)
+    this.player.update(dt, this.world);
+
+    // update monsters
+    for(const m of this.monsters){
+      if(m.dead) continue;
+      m.update(dt, this.player, this.world);
+    }
+
+    // pickup loot on contact (even without auto loot)
+    this.pickupLoot();
+
+    // attacks
+    if(this.wantSkill){
+      this.wantSkill = false;
+      this.performAttack(true);
+    }
+    if(this.wantAttack){
+      // keep it as long as pressed for PC; but consume once per tick to avoid huge spam
+      // This ensures Z/X spam does not break anything.
+      this.wantAttack = false;
+      this.performAttack(false);
+    }
+
+    // cleanup
+    this.monsters = this.monsters.filter(m=>!m.dead);
+    for(const l of this.loot) l.update(dt);
+    this.loot = this.loot.filter(l=>!l.dead);
+
+    for(const f of this.fx) f.update(dt);
+    this.fx = this.fx.filter(f=>!f.dead);
+
+    // If monsters gone but not counted? (safety)
+    if(this.isBossStage && this.monsters.length === 0 && this.kills < this.stageTarget){
+      this.kills = this.stageTarget;
+      this.onStageClear();
+    }
+
+    this.updateHudBars();
+    this.updateStageInfo();
+
+    // autosave sometimes
+    if(Math.random() < 0.01){
+      saveNow();
+    }
+  }
+
+  draw(){
+    // clear
+    ctx.fillStyle="#000";
+    ctx.fillRect(0,0,BASE_W,BASE_H);
+
+    // background
+    if(assets.bg){
+      // tile / scale to fit base
+      // draw stretched for simplicity
+      ctx.drawImage(assets.bg, 0,0, BASE_W, BASE_H);
+    }else{
+      // fallback gradient
+      const g = ctx.createLinearGradient(0,0,0,BASE_H);
+      g.addColorStop(0,"#070910");
+      g.addColorStop(1,"#000");
+      ctx.fillStyle=g;
+      ctx.fillRect(0,0,BASE_W,BASE_H);
+    }
+
+    // camera
+    this.cam.update(1/60, this.player, this.world);
+
+    // ground line
+    ctx.save();
+    const gy = Math.floor(this.world.groundY - this.cam.y);
+    ctx.strokeStyle="rgba(255,255,255,.10)";
+    ctx.beginPath();
+    ctx.moveTo(0, gy+1);
+    ctx.lineTo(BASE_W, gy+1);
+    ctx.stroke();
+    ctx.restore();
+
+    // boss gate sign in distance (visual)
+    const gateX = this.world.rightWall - 260;
+    const gx = Math.floor(gateX - this.cam.x);
+    const gy2 = Math.floor(this.world.groundY - 140 - this.cam.y);
+    if(gx > -200 && gx < BASE_W+200){
+      ctx.save();
+      ctx.globalAlpha = 0.85;
+      ctx.fillStyle="rgba(40,60,120,.28)";
+      ctx.fillRect(gx, gy2, 160, 120);
+      ctx.strokeStyle="rgba(160,210,255,.35)";
+      ctx.lineWidth=2;
+      ctx.strokeRect(gx, gy2, 160, 120);
+      ctx.fillStyle="rgba(220,240,255,.85)";
+      ctx.font="900 16px system-ui, sans-serif";
+      ctx.fillText(this.isBossStage ? "BOSS GATE" : "GATE", gx+26, gy2+30);
+      ctx.font="900 12px system-ui, sans-serif";
+      ctx.fillStyle="rgba(220,240,255,.72)";
+      ctx.fillText("터널 끝", gx+54, gy2+52);
+      ctx.restore();
+    }
+
+    // draw loot
+    for(const l of this.loot) l.draw(ctx, this.cam);
+
+    // draw monsters
+    for(const m of this.monsters) m.draw(ctx, this.cam);
+
+    // draw player
+    this.player.draw(ctx, this.cam);
+
+    // fx
+    for(const f of this.fx) f.draw(ctx, this.cam);
+
+    // UI text (stage/time)
+    ctx.save();
+    ctx.fillStyle="rgba(0,0,0,.45)";
+    ctx.fillRect(10, BASE_H-38, 360, 28);
+    ctx.fillStyle="rgba(255,255,255,.92)";
+    ctx.font="900 14px system-ui, sans-serif";
+    const t = `STAGE ${this.stage.a}-${this.stage.b}  ${this.isBossStage ? "BOSS" : ""}  ${Math.ceil(this.timeLeft)}s`;
+    ctx.fillText(t, 18, BASE_H-19);
+    ctx.restore();
+  }
+}
+
+const game = new Game();
+
+/* ====== HUD pills events ====== */
+pillAutoTarget.addEventListener("click", ()=> game.toggleAuto("target"));
+pillAutoAttack.addEventListener("click", ()=> game.toggleAuto("attack"));
+pillAutoLoot.addEventListener("click", ()=> game.toggleAuto("loot"));
+pillAutoMove.addEventListener("click", ()=> game.toggleAuto("move"));
+
+/* ====== Menu buttons ====== */
+function openOptions(){
+  optionsOverlay.classList.add("open");
+  menuOverlay.classList.remove("open");
+  hudPanel.classList.remove("open");
+}
+btnOptions.addEventListener("click", openOptions);
+btnCloseOptions.addEventListener("click", ()=>{
+  optionsOverlay.classList.remove("open");
+  // return to menu if not running, else just close
+  if(!game.running) menuOverlay.classList.add("open");
+});
+btnBackToMenu.addEventListener("click", ()=> game.exitToMenu());
+
+btnStart.addEventListener("click", async ()=>{
+  // user gesture: prime audio
+  await audio.prime();
+  if(!loadSave()){
+    game.startNew();
+  }
+  game.startFromMenu(false);
+});
+btnContinue.addEventListener("click", async ()=>{
+  await audio.prime();
+  game.startFromMenu(true);
+});
+btnReset.addEventListener("click", ()=>{
+  if(confirm("저장 데이터(인벤/골드/진행)를 초기화할까요?")){
+    game.startNew();
+    btnContinue.disabled = false;
+    alert("초기화 완료!");
+  }
+});
+
+/* ====== Options (audio file) ====== */
+function setAudioMsg(msg){
+  audioMsg.textContent = msg;
+}
+fileBgm.addEventListener("change", ()=>{
+  const f = fileBgm.files && fileBgm.files[0];
+  if(!f) return;
+  audio.setFromFile("bgm", f);
+  setAudioMsg(`BGM 교체됨: ${f.name} (형식: ${f.type || "unknown"})`);
+});
+fileHit.addEventListener("change", ()=>{
+  const f = fileHit.files && fileHit.files[0];
+  if(!f) return;
+  audio.setFromFile("hit", f);
+  setAudioMsg(`타격음 교체됨: ${f.name}`);
+});
+fileCoin.addEventListener("change", ()=>{
+  const f = fileCoin.files && fileCoin.files[0];
+  if(!f) return;
+  audio.setFromFile("coin", f);
+  setAudioMsg(`코인음 교체됨: ${f.name}`);
+});
+
+btnTestAudio.addEventListener("click", async ()=>{
+  // Try play bgm shortly
+  const ok = await audio.playBgm();
+  if(ok){
+    audio.sfx(audio.sfxHit);
+    setTimeout(()=> audio.sfx(audio.sfxCoin), 220);
+    setAudioMsg("오디오 재생 OK. (브라우저가 지원 안 하면 mp3로 변환해서 올리면 100% 됩니다.)");
+  }else{
+    setAudioMsg("오디오 자동재생이 차단됨. '게임 시작' 버튼 누른 직후에만 재생될 수 있어요.");
+  }
+});
+btnClearAudio.addEventListener("click", ()=>{
+  audio.clearUser();
+  setAudioMsg("오디오 교체 해제: 기본(/assets/*.mp3)로 복귀");
+});
+
+btnTogglePixel.addEventListener("click", ()=>{
+  pixelMode = !pixelMode;
+  ctx.imageSmoothingEnabled = !pixelMode;
+  setAudioMsg(`픽셀 렌더링: ${pixelMode ? "ON(선명)" : "OFF(부드러움)"}`);
+});
+
+/* ====== HUD panel menu buttons mapping ====== */
+document.querySelectorAll(".menuBtn").forEach(btn=>{
+  btn.addEventListener("click", (e)=>{
+    const act = btn.getAttribute("data-act");
+    if(act==="inv") game.toggleInventory();
+    if(act==="daily") game.openDaily();
+    if(act==="achv") game.openAchv();
+    if(act==="auto"){
+      // stay in panel
+      game.toast("오토 토글은 아래 스위치로!");
+    }
+    if(act==="audio"){
+      openOptions();
+    }
+    if(act==="exit"){
+      game.exitToMenu();
+    }
   });
+});
 
-})();
+/* ====== Main Loop (fixed timestep for stable physics/no jitter) ====== */
+let last = now();
+let acc = 0;
+const FIXED = 1/60;
+
+function loop(){
+  const t = now();
+  let dt = (t-last)/1000;
+  last = t;
+
+  dt = clamp(dt, 0, 0.05);
+  acc += dt;
+
+  // update multiple steps (stable)
+  while(acc >= FIXED){
+    game.tick(FIXED);
+    acc -= FIXED;
+  }
+
+  game.draw();
+  requestAnimationFrame(loop);
+}
+
+/* ====== Start boot ====== */
+async function boot(){
+  await loadAssets();
+  btnContinue.disabled = !loadSave();
+  requestAnimationFrame(loop);
+}
+boot();
+
+/* ====== Extra Fixes: prevent mobile scroll/pinch and layout shift ====== */
+document.addEventListener("gesturestart", (e)=> e.preventDefault(), {passive:false});
+document.addEventListener("touchmove", (e)=> {
+  // prevent page scroll, keep gameplay stable
+  if(e.target === canvas) e.preventDefault();
+}, {passive:false});
 </script>
 </body>
 </html>
