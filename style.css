@@ -1,236 +1,151 @@
-/* ================================
-   BOSS GATE - style.css (FULL)
-   - 모바일 세로/가로 자동 대응
-   - 터치 버튼은 viewport(fixed) 기준
-   - safe-area(노치/하단바) 대응
-   - PC(마우스)에서는 터치 버튼 숨김
-================================== */
-
 :root{
-  color-scheme: dark;
+  --bg:#070a14;
+  --panel:rgba(10,14,24,0.72);
+  --line:rgba(255,255,255,0.14);
+  --txt:rgba(235,240,255,0.92);
+  --txt2:rgba(235,240,255,0.70);
+  --accent:rgba(91,140,255,0.55);
+  --danger:rgba(255,91,110,0.60);
 
-  /* stage 기본 컬러 */
-  --bg: #050812;
-
-  /* 버튼/간격(기본: 가로/일반) */
-  --pad: clamp(8px, 2.2vw, 16px);
-  --gap: clamp(6px, 1.8vw, 14px);
-
-  /* 버튼 크기 */
-  --btn: clamp(38px, 9.5vw, 56px);
-  --btnBig: clamp(46px, 12vw, 64px);
-
-  /* 라운드/폰트 */
-  --rad:  calc(var(--btn) * 0.26);
-  --radB: calc(var(--btnBig) * 0.26);
-  --fs:  clamp(12px, 3.8vw, 18px);
-  --fsB: clamp(13px, 4.2vw, 18px);
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
 }
 
-html, body{
-  margin: 0;
-  height: 100%;
-  background: var(--bg);
-  overflow: hidden;
-  touch-action: none;
-  -webkit-user-select: none;
-  user-select: none;
-  font-family: system-ui, -apple-system, Segoe UI, Roboto, Apple SD Gothic Neo, Noto Sans KR, sans-serif;
+*{ box-sizing:border-box; }
+html,body{
+  margin:0;
+  height:100%;
+  background:var(--bg);
+  color:var(--txt);
+  font-family:system-ui, -apple-system, Segoe UI, Roboto, "Noto Sans KR", sans-serif;
+  overscroll-behavior:none;
+  touch-action:manipulation;
 }
 
 #wrap{
-  height: 100%;
-  display: grid;
-  place-items: center;
+  min-height:100%;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding: calc(10px + var(--safe-top)) calc(10px + var(--safe-right))
+           calc(10px + var(--safe-bottom)) calc(10px + var(--safe-left));
 }
 
-/* 게임 스테이지(캔버스) */
 #stage{
-  position: relative;
-  width: min(100vw, calc(100vh * 16 / 9));
-  height: min(100vh, calc(100vw * 9 / 16));
-  max-width: 960px;
-  max-height: 540px;
-  background: var(--bg);
-  border-radius: 14px;
-  box-shadow: 0 10px 40px rgba(0,0,0,.45);
-  overflow: hidden;
+  width:min(96vw, 1100px);
+  aspect-ratio: 16 / 9;
+  position:relative;
 }
 
 canvas#game{
-  width: 100%;
-  height: 100%;
-  display: block;
-  background: var(--bg);
+  width:100%;
+  height:100%;
+  display:block;
+  border-radius:16px;
+  background:#000;
+  box-shadow:0 18px 40px rgba(0,0,0,0.45);
 }
 
-/* =========================================================
-   ✅ 터치 버튼 레이어: stage가 아니라 "화면(뷰포트)" 기준으로!
-   - 세로(포트레이트)에서 stage가 작아져도 버튼이 화면 여백에 배치됨
-========================================================= */
+/* -------------------- Touch HUD -------------------- */
 #touch{
-  position: fixed;      /* 핵심 */
-  inset: 0;
-  pointer-events: none;
-  z-index: 50;
+  position:fixed;
+  inset:0;
+  pointer-events:none; /* 버튼만 pointer */
+  z-index:50;
 }
 
-/* 공통 버튼 */
-.btn{
-  pointer-events: auto;
-  position: absolute;
+#touch .btn{
+  pointer-events:auto;
+  user-select:none;
+  -webkit-user-select:none;
+  touch-action:none;
 
-  width: var(--btn);
-  height: var(--btn);
-  border-radius: var(--rad);
+  position:absolute;
+  display:flex;
+  align-items:center;
+  justify-content:center;
 
-  display: grid;
-  place-items: center;
+  color:var(--txt);
+  background:rgba(255,255,255,0.08);
+  border:1px solid rgba(255,255,255,0.18);
+  border-radius:16px;
 
-  background: rgba(255,255,255,0.08);
-  border: 1px solid rgba(255,255,255,0.14);
-  color: rgba(235,240,255,0.92);
+  box-shadow:0 10px 26px rgba(0,0,0,0.35);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
 
-  font-weight: 900;
-  font-size: var(--fs);
-
-  -webkit-tap-highlight-color: transparent;
-  user-select: none;
-  touch-action: none;
-
-  /* 화면을 덜 가리게 */
-  opacity: 0.88;
-  backdrop-filter: blur(2px);
+  font-weight:900;
+  letter-spacing:0.3px;
 }
 
-.btn:active{
+#touch .btn:active{
   transform: translateY(1px);
-  background: rgba(91,140,255,0.20);
   border-color: rgba(91,140,255,0.55);
-  opacity: 1;
+  background: rgba(91,140,255,0.16);
 }
 
-/* =====================
-   버튼 배치 (기본)
-   - safe-area 대응
-===================== */
-
-/* 왼쪽 이동 */
-#b-left{
-  left:  calc(var(--pad) + env(safe-area-inset-left));
-  bottom: calc(var(--pad) + env(safe-area-inset-bottom));
-}
-#b-right{
-  left:  calc(var(--pad) + env(safe-area-inset-left) + var(--btn) + var(--gap));
-  bottom: calc(var(--pad) + env(safe-area-inset-bottom));
+/* 기본(PC/가로) 크기 */
+#touch .btn{
+  width:64px;
+  height:64px;
+  font-size:20px;
 }
 
-/* 오른쪽 공격/스킬 */
-#b-atk{
-  right:  calc(var(--pad) + env(safe-area-inset-right) + var(--btn) + var(--gap));
-  bottom: calc(var(--pad) + env(safe-area-inset-bottom));
-}
-#b-skill{
-  right:  calc(var(--pad) + env(safe-area-inset-right));
-  bottom: calc(var(--pad) + env(safe-area-inset-bottom));
-}
+/* 좌/우 */
+#b-left{ left: calc(16px + var(--safe-left)); bottom: calc(22px + var(--safe-bottom)); }
+#b-right{ left: calc(92px + var(--safe-left)); bottom: calc(22px + var(--safe-bottom)); }
 
-/* 큰 버튼: 점프/포션 */
-#b-jump{
-  width: var(--btnBig);
-  height: var(--btnBig);
-  border-radius: var(--radB);
-  font-size: var(--fsB);
+/* 오른쪽 스택 */
+#b-atk{ right: calc(16px + var(--safe-right)); bottom: calc(22px + var(--safe-bottom)); }
+#b-skill{ right: calc(92px + var(--safe-right)); bottom: calc(22px + var(--safe-bottom)); }
+#b-jump{ right: calc(16px + var(--safe-right)); bottom: calc(98px + var(--safe-bottom)); }
+#b-potion{ right: calc(92px + var(--safe-right)); bottom: calc(98px + var(--safe-bottom)); }
 
-  right:  calc(var(--pad) + env(safe-area-inset-right));
-  bottom: calc(var(--pad) + env(safe-area-inset-bottom) + var(--btn) + var(--gap));
-}
-#b-potion{
-  width: var(--btnBig);
-  height: var(--btnBig);
-  border-radius: var(--radB);
-  font-size: var(--fsB);
+/* 상단 */
+#b-menu{ right: calc(16px + var(--safe-right)); top: calc(16px + var(--safe-top)); width:56px; height:56px; font-size:20px; }
+#b-inv{ right: calc(78px + var(--safe-right)); top: calc(16px + var(--safe-top)); width:56px; height:56px; font-size:18px; }
 
-  right:  calc(var(--pad) + env(safe-area-inset-right) + var(--btn) + var(--gap));
-  bottom: calc(var(--pad) + env(safe-area-inset-bottom) + var(--btn) + var(--gap));
-}
-
-/* 메뉴 버튼(우상단) */
-#b-menu{
-  width: clamp(34px, 8vw, 52px);
-  height: clamp(34px, 8vw, 52px);
-  border-radius: clamp(10px, 2.6vw, 14px);
-  font-size: clamp(14px, 4vw, 18px);
-
-  right: calc(var(--pad) + env(safe-area-inset-right));
-  top:   calc(var(--pad) + env(safe-area-inset-top));
-}
-
-/* =========================================================
-   ✅ PC(마우스/키보드)에서는 터치 버튼 숨김
-========================================================= */
-@media (hover: hover) and (pointer: fine){
-  #touch{ display: none; }
-}
-
-/* =========================================================
-   ✅ 아주 작은 화면(초소형) - 더 줄이기
-========================================================= */
-@media (max-width: 420px){
-  :root{
-    --btn: clamp(34px, 9vw, 46px);
-    --btnBig: clamp(40px, 11vw, 54px);
-    --fs:  clamp(11px, 3.6vw, 16px);
-    --fsB: clamp(12px, 3.8vw, 16px);
+/* -------------------- Mobile portrait: 더 작게 -------------------- */
+@media (max-width: 520px) and (orientation: portrait){
+  #stage{ width: 96vw; }
+  #touch .btn{
+    width:52px;
+    height:52px;
+    font-size:18px;
+    border-radius:14px;
   }
-  .btn{ opacity: 0.82; }
+  #b-left{ left: calc(10px + var(--safe-left)); bottom: calc(14px + var(--safe-bottom)); }
+  #b-right{ left: calc(68px + var(--safe-left)); bottom: calc(14px + var(--safe-bottom)); }
+
+  #b-atk{ right: calc(10px + var(--safe-right)); bottom: calc(14px + var(--safe-bottom)); }
+  #b-skill{ right: calc(68px + var(--safe-right)); bottom: calc(14px + var(--safe-bottom)); }
+  #b-jump{ right: calc(10px + var(--safe-right)); bottom: calc(72px + var(--safe-bottom)); }
+  #b-potion{ right: calc(68px + var(--safe-right)); bottom: calc(72px + var(--safe-bottom)); }
+
+  #b-menu{ top: calc(10px + var(--safe-top)); right: calc(10px + var(--safe-right)); width:48px; height:48px; }
+  #b-inv{ top: calc(10px + var(--safe-top)); right: calc(62px + var(--safe-right)); width:48px; height:48px; }
 }
 
-/* =========================================================
-   ✅ 세로(포트레이트) 전용 오버라이드
-   - 버튼을 더 작게
-   - 큰 버튼은 더 투명
-========================================================= */
-@media (orientation: portrait){
-  :root{
-    --pad: clamp(6px, 1.8vw, 12px);
-    --gap: clamp(6px, 1.6vw, 12px);
+/* -------------------- Mobile landscape: 더 더 작게 + 화면 가림 최소 -------------------- */
+@media (max-height: 520px) and (orientation: landscape){
+  #stage{ width:min(98vw, 980px); }
+  #touch .btn{
+    width:48px;
+    height:48px;
+    font-size:16px;
+    border-radius:14px;
+    background:rgba(255,255,255,0.07);
+  }
+  #b-left{ left: calc(10px + var(--safe-left)); bottom: calc(10px + var(--safe-bottom)); }
+  #b-right{ left: calc(62px + var(--safe-left)); bottom: calc(10px + var(--safe-bottom)); }
 
-    --btn: clamp(32px, 8.0vw, 44px);
-    --btnBig: clamp(36px, 9.0vw, 50px);
+  #b-atk{ right: calc(10px + var(--safe-right)); bottom: calc(10px + var(--safe-bottom)); }
+  #b-skill{ right: calc(62px + var(--safe-right)); bottom: calc(10px + var(--safe-bottom)); }
+  #b-jump{ right: calc(10px + var(--safe-right)); bottom: calc(62px + var(--safe-bottom)); }
+  #b-potion{ right: calc(62px + var(--safe-right)); bottom: calc(62px + var(--safe-bottom)); }
 
-    --fs:  clamp(10px, 3.2vw, 15px);
-    --fsB: clamp(11px, 3.4vw, 15px);
-  }
-
-  .btn{ opacity: 0.80; }
-
-  /* 세로에서는 하단바/여백이 커지므로 살짝 더 아래로 붙임 */
-  #b-left{
-    bottom: calc(var(--pad) + env(safe-area-inset-bottom));
-  }
-  #b-right{
-    bottom: calc(var(--pad) + env(safe-area-inset-bottom));
-  }
-  #b-atk{
-    bottom: calc(var(--pad) + env(safe-area-inset-bottom));
-  }
-  #b-skill{
-    bottom: calc(var(--pad) + env(safe-area-inset-bottom));
-  }
-
-  /* 큰 버튼(점프/포션)은 한 줄 위에 */
-  #b-jump{
-    bottom: calc(var(--pad) + env(safe-area-inset-bottom) + var(--btn) + var(--gap));
-  }
-  #b-potion{
-    bottom: calc(var(--pad) + env(safe-area-inset-bottom) + var(--btn) + var(--gap));
-  }
-}
-
-/* =========================================================
-   (선택) 접근성: 움직임 최소화 선호
-========================================================= */
-@media (prefers-reduced-motion: reduce){
-  .btn:active{ transform: none; }
+  #b-menu{ top: calc(10px + var(--safe-top)); right: calc(10px + var(--safe-right)); width:44px; height:44px; }
+  #b-inv{ top: calc(10px + var(--safe-top)); right: calc(58px + var(--safe-right)); width:44px; height:44px; }
 }
