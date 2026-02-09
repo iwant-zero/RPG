@@ -4,11 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
   <title>보스게이트 (BOSS GATE)</title>
-
-  <!-- ✅ 외부 CSS 연결 (index.html과 같은 폴더에 style.css 필요) -->
   <link rel="stylesheet" href="./style.css" />
-
-  <!-- ✅ iOS 사파리 safe-area 제대로 쓰려면 필요 -->
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 </head>
@@ -20,7 +16,7 @@
     </div>
   </div>
 
-  <!-- ✅ 터치 버튼: stage 밖(뷰포트 fixed) -->
+  <!-- ✅ 터치 버튼(뷰포트 fixed) -->
   <div id="touch" aria-hidden="true">
     <div class="btn" id="b-left" data-k="left">◀</div>
     <div class="btn" id="b-right" data-k="right">▶</div>
@@ -30,6 +26,7 @@
     <div class="btn" id="b-atk" data-k="atk">Z</div>
     <div class="btn" id="b-skill" data-k="skill">X</div>
 
+    <div class="btn" id="b-inv" data-k="inv">🎒</div>
     <div class="btn" id="b-menu" data-k="menu">⚙</div>
   </div>
 
@@ -63,7 +60,7 @@
   const lerp = (a,b,t)=>a+(b-a)*t;
   function smoothFactor(dt, sharpness=18){ return 1 - Math.pow(0.001, dt*sharpness); }
 
-  // ✅ 모바일에서 스크롤/뒤로가기 같은 키 충돌 방지
+  // ✅ 브라우저 기본 동작(스크롤/뒤로가기 등) 방지
   window.addEventListener("keydown", (e) => {
     const k = e.key.toLowerCase();
     if (["arrowleft","arrowright","arrowup"," ","z","x","escape","i","p","h","enter","backspace"].includes(k)) {
@@ -73,7 +70,7 @@
   }, { passive:false });
 
   // -------------------- Save/Load --------------------
-  const SAVE_KEY = "boss_gate_web_v10_inventory_restore";
+  const SAVE_KEY = "boss_gate_web_v11_full_shop_inv";
   function save(state) { try { localStorage.setItem(SAVE_KEY, JSON.stringify(state)); } catch {} }
   function load() {
     try {
@@ -335,7 +332,7 @@
 
   window.addEventListener("keyup", (e) => keys.delete(e.key.toLowerCase()), { passive:true });
 
-  // ✅ 터치 입력: 버튼이 stage 밖(뷰포트 fixed)이라도 정상 작동
+  // ✅ Touch input
   const touch = document.getElementById("touch");
   const touchDown = new Set();
   function setTouchKey(name, down) {
@@ -355,6 +352,7 @@
       if (k === "atk") pressed.atk = true;
       if (k === "skill") pressed.skill = true;
       if (k === "menu") pressed.menu = true;
+      if (k === "inv") pressed.inv = true;
       if (k === "potion") pressed.potion = true;
     }, { passive:false });
 
@@ -589,7 +587,7 @@
     return plats;
   }
 
-  // -------------------- Items --------------------
+  // -------------------- Items / Shop / Appraise --------------------
   const SLOTS = ["weapon","armor","ring"];
   const RAR = [
     {k:"N",  name:"일반", w:60, opt:0, mult:1.00},
@@ -612,6 +610,7 @@
     {k:"hpP", n:"체력%",min:3, max:12,w:5},
     {k:"ls",  n:"흡혈", min:1, max:4, w:3},
   ];
+
   function wpick(list){
     const sum = list.reduce((s,x)=>s+x.w,0);
     let r = Math.random()*sum;
@@ -658,6 +657,7 @@
       spd: Math.round(spd*mult),
     };
 
+    // ✅ "미감정"은 희귀 이상에서만 발생
     const identified = (rar.k==="N");
     const hidden = (rar.opt>0) ? rollAffixes(rar.opt) : [];
 
@@ -706,24 +706,26 @@
     return Math.max(5, Math.floor(base * rarMult * idBonus));
   }
 
+  // 상점/감정
+  const POTION_MAX = 12;
+  const POTION_HEAL_PCT = 0.35;
+  const POTION_CD = 8.0;
+
+  const POTION_PRICE = 60;         // 포션 1개 가격
+  const APPRAISE_PRICE = 45;       // 감정 1회 가격(골드)
+  const APPRAISE_TICKET_REWARD = 1;// 스테이지 클리어 감정권(예시)
+  // (감정권이 있으면 먼저 감정권 소비, 없으면 골드로 감정)
+
+  // -------------------- Physics / Combat --------------------
   function aabb(ax,ay,aw,ah, bx,by,bw,bh){
     return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by;
   }
 
-  // ---- Heal ----
-  const POTION_MAX = 12;
-  const POTION_HEAL_PCT = 0.35;
-  const POTION_CD = 8.0;
-  const REGEN_DELAY = 5.0;
-  const REGEN_RATE = 0.02;
-
-  // ---- Combat ----
   const ATTACK_LOCK_ATK = 0.18;
   const ATTACK_LOCK_SKL = 0.24;
   const CONTACT_DAMAGE_COOLDOWN = 0.22;
   const CONTACT_SEP_STRENGTH = 0.78;
 
-  // ---- Drop ----
   const DROP_RATE_NORMAL = 0.07;
   const DROP_RATE_ELITE  = 0.18;
   const DROP_RATE_BOSS   = 0.60;
@@ -762,14 +764,15 @@
 
       this.potions = 3;
       this.potionCd = 0;
-      this.noHitT = 999;
-
-      this.anim = "idle";
-      this.animT = 0;
 
       this.gold = 120;
       this.stage = 1;
       this.kills = 0;
+
+      this.appraiseTickets = 0;
+
+      this.anim = "idle";
+      this.animT = 0;
 
       this.invItems = [ makeItem("weapon",1), makeItem("armor",1), makeItem("ring",1) ];
       this.equip = { weapon:null, armor:null, ring:null };
@@ -917,7 +920,21 @@
     ctx.restore();
   }
 
-  // HUD 버튼 위치(캔버스 내부)
+  function rarColor(r){
+    if (r==="SSR") return "rgba(255,207,91,0.95)";
+    if (r==="SR")  return "rgba(200,140,255,0.95)";
+    if (r==="R")   return "rgba(91,140,255,0.95)";
+    return "rgba(235,240,255,0.82)";
+  }
+  function slotName(s){
+    return s==="weapon" ? "무기" : s==="armor" ? "방어구" : "반지";
+  }
+  function itemLine(it){
+    const idTag = it.identified ? "" : " (미감정)";
+    return `[${it.rar}] ${slotName(it.slot)} | ${it.name}${idTag} | iLv ${it.ilvl} | PWR ${itemPow(it)} | 판매 ${sellPrice(it)}G`;
+  }
+
+  // HUD 버튼(캔버스 내부)
   const HUD_MENU_BTN   = { x: 14+740+10, y: 14,            w: 46, h: 46 };
   const HUD_POTION_BTN = { x: 14+740+10, y: 14+46+8,       w: 46, h: 46 };
   const HUD_INV_BTN    = { x: 14+740+10, y: 14+46+8+46+8,  w: 46, h: 46 };
@@ -926,12 +943,14 @@
   function freshState(){
     const p = new Player();
     return {
-      ver: 10,
+      ver: 11,
       game: "보스게이트 (BOSS GATE)",
       createdAt: isoNow(),
       updatedAt: isoNow(),
 
-      gs: "MENU",
+      gs: "MENU", // MENU / OPTIONS / PLAY / PAUSE / INV / SHOP / EXIT
+      lastPlayGs: "PLAY",
+
       opt: { muted:false, bgm:true, sfx:true },
 
       player: p,
@@ -959,6 +978,8 @@
 
       invSelId: null,
       invScroll: 0,
+
+      shopScroll: 0
     };
   }
 
@@ -1072,9 +1093,12 @@
     const bonusGold = state.inBossRoom ? (120 + state.stageIndex*18) : (40 + state.stageIndex*8);
     p.gold += bonusGold;
 
+    // ✅ 감정권 보상
+    p.appraiseTickets += APPRAISE_TICKET_REWARD;
+
     const got = p.potions - before;
-    state.msg = `클리어 보상: +${bonusGold}G ${got>0?`+포션${got}개`:``}`.trim();
-    state.msgT = 1.6;
+    state.msg = `클리어 보상: +${bonusGold}G ${got>0?`+포션${got}개`:``} +감정권${APPRAISE_TICKET_REWARD}`;
+    state.msgT = 1.8;
   }
 
   function collidePlatforms(ent, plats){
@@ -1107,6 +1131,7 @@
     ent.y = clamp(ent.y, 40, WORLD.h - 40);
   }
 
+  // -------------------- Draw world --------------------
   function drawBackground(){
     if (IMG.bg.ok) {
       const img = IMG.bg.img;
@@ -1124,74 +1149,6 @@
       ctx.fillStyle = g;
       ctx.fillRect(0,0,VIEW_W,VIEW_H);
     }
-  }
-
-  function tryUsePotion(state){
-    const p = state.player;
-    const d = p.derived();
-
-    if (p.potionCd > 0) { state.msg = `포션 쿨타임 ${p.potionCd.toFixed(1)}s`; state.msgT = 0.9; return false; }
-    if (p.potions <= 0) { state.msg = "포션이 없다!"; state.msgT = 1.2; return false; }
-    if (p.hp >= d.hpMax) { state.msg = "HP가 이미 가득하다."; state.msgT = 0.9; return false; }
-
-    const heal = Math.max(1, Math.floor(d.hpMax * POTION_HEAL_PCT));
-    const before = p.hp;
-    p.hp = clamp(p.hp + heal, 0, d.hpMax);
-    p.potions -= 1;
-    p.potionCd = POTION_CD;
-
-    audio.playCoin();
-    state.dmgText.push(new DamageText(p.x, p.y - 72, `+${Math.floor(p.hp - before)}`, "rgba(46,229,157,0.95)"));
-    state.msg = `포션 사용! (+${Math.floor(p.hp - before)} HP)`;
-    state.msgT = 1.1;
-    save(state);
-    return true;
-  }
-
-  function applyRegen(state, dt){
-    const p = state.player;
-    const d = p.derived();
-    if (p.hp <= 0) return;
-    if (p.hp >= d.hpMax) return;
-
-    if (p.noHitT >= REGEN_DELAY) {
-      const heal = d.hpMax * REGEN_RATE * dt;
-      p.hp = clamp(p.hp + heal, 0, d.hpMax);
-    }
-  }
-
-  function applyLifesteal(state, dmg){
-    const p = state.player;
-    const d = p.derived();
-    if (d.ls <= 0) return;
-    if (dmg <= 0) return;
-    if (p.hp <= 0) return;
-
-    const heal = Math.floor(dmg * (d.ls/100));
-    if (heal <= 0) return;
-    const before = p.hp;
-    p.hp = clamp(p.hp + heal, 0, d.hpMax);
-    const got = Math.floor(p.hp - before);
-    if (got > 0) state.dmgText.push(new DamageText(p.x, p.y - 86, `+${got}`, "rgba(46,229,157,0.90)"));
-  }
-
-  function stabilizeOverlapNoBounce(p, e){
-    const dx = (p.x - e.x);
-    const overlapX = (p.w/2 + e.w/2) - Math.abs(dx);
-    if (overlapX <= 0) return false;
-
-    const dir = dx === 0 ? (p.face || 1) : Math.sign(dx);
-    const push = overlapX * CONTACT_SEP_STRENGTH;
-
-    p.x += dir * (push * 0.35);
-    e.x -= dir * (push * 0.65);
-
-    p.vx *= 0.10;
-    e.vx *= 0.10;
-
-    e.vy = 0;
-    if (e.groundSnap) snapToGround(e);
-    return true;
   }
 
   function drawPlatforms(plats){
@@ -1236,6 +1193,48 @@
     }
   }
 
+  function tryUsePotion(state){
+    const p = state.player;
+    const d = p.derived();
+
+    if (p.potionCd > 0) { state.msg = `포션 쿨타임 ${p.potionCd.toFixed(1)}s`; state.msgT = 0.9; return false; }
+    if (p.potions <= 0) { state.msg = "포션이 없다!"; state.msgT = 1.2; return false; }
+    if (p.hp >= d.hpMax) { state.msg = "HP가 이미 가득하다."; state.msgT = 0.9; return false; }
+
+    const heal = Math.max(1, Math.floor(d.hpMax * POTION_HEAL_PCT));
+    const before = p.hp;
+    p.hp = clamp(p.hp + heal, 0, d.hpMax);
+    p.potions -= 1;
+    p.potionCd = POTION_CD;
+
+    audio.playCoin();
+    state.dmgText.push(new DamageText(p.x, p.y - 72, `+${Math.floor(p.hp - before)}`, "rgba(46,229,157,0.95)"));
+    state.msg = `포션 사용! (+${Math.floor(p.hp - before)} HP)`;
+    state.msgT = 1.1;
+    save(state);
+    return true;
+  }
+
+  function stabilizeOverlapNoBounce(p, e){
+    const dx = (p.x - e.x);
+    const overlapX = (p.w/2 + e.w/2) - Math.abs(dx);
+    if (overlapX <= 0) return false;
+
+    const dir = dx === 0 ? (p.face || 1) : Math.sign(dx);
+    const push = overlapX * CONTACT_SEP_STRENGTH;
+
+    p.x += dir * (push * 0.35);
+    e.x -= dir * (push * 0.65);
+
+    p.vx *= 0.10;
+    e.vx *= 0.10;
+
+    e.vy = 0;
+    if (e.groundSnap) snapToGround(e);
+    return true;
+  }
+
+  // -------------------- HUD --------------------
   function drawHud(state){
     const p = state.player;
     const d = p.derived();
@@ -1268,9 +1267,9 @@
     ctx.fillStyle = "rgba(235,240,255,0.92)";
     ctx.font = "bold 12px ui-monospace, Menlo, Consolas";
     ctx.fillText(`BOSS GATE | STAGE ${stageLabel(state.stageIndex)} ${state.inBossRoom ? "(BOSS)" : ""} | KILL ${state.killed}/${state.goalKills}`, 350, 38);
-    ctx.fillText(`HP ${Math.floor(p.hp)}/${d.hpMax}  ATK ${d.atk} DEF ${d.def} CRIT ${d.crit}%  SPD ${d.spd}  LS ${d.ls}%`, 350, 56);
-    ctx.fillText(`GOLD ${p.gold}G | 포션 ${p.potions}/${POTION_MAX} | 접촉쿨 ${p.hitCd.toFixed(2)}s`, 350, 74);
-    ctx.fillText(`⚙:메뉴  🎒/I:인벤  Z:공격  X:스킬  Space:점프  H:포션`, 350, 92);
+    ctx.fillText(`HP ${Math.floor(p.hp)}/${d.hpMax}  ATK ${d.atk} DEF ${d.def} CRIT ${d.crit}% SPD ${d.spd}`, 350, 56);
+    ctx.fillText(`GOLD ${p.gold}G | 포션 ${p.potions}/${POTION_MAX} | 감정권 ${p.appraiseTickets}`, 350, 74);
+    ctx.fillText(`⚙/ESC: 메뉴  🎒/I: 인벤  🏪: 상점(메뉴)  H/🧪: 포션`, 350, 92);
 
     const hotGear = (pointer.x>=HUD_MENU_BTN.x && pointer.x<=HUD_MENU_BTN.x+HUD_MENU_BTN.w &&
                      pointer.y>=HUD_MENU_BTN.y && pointer.y<=HUD_MENU_BTN.y+HUD_MENU_BTN.h);
@@ -1293,13 +1292,13 @@
     ctx.font = "bold 11px ui-monospace, Menlo, Consolas";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText(String(p.potions), HUD_POTION_BTN.x+36, HUD_POTION_BTN.y+36);
+    ctx.fillText(String(state.player.potions), HUD_POTION_BTN.x+36, HUD_POTION_BTN.y+36);
     ctx.restore();
 
     if (state.msgT > 0 && state.msg) {
       ctx.globalAlpha = clamp(state.msgT/0.5, 0, 1);
       ctx.fillStyle = "rgba(0,0,0,0.35)";
-      roundRect(14, 130, 720, 36, 12, true, false);
+      roundRect(14, 130, 920-28, 36, 12, true, false);
       ctx.fillStyle = "rgba(235,240,255,0.92)";
       ctx.font = "bold 14px system-ui, -apple-system, Segoe UI";
       ctx.fillText(state.msg, 28, 154);
@@ -1307,55 +1306,60 @@
     }
   }
 
-  function drawBossGateLogo(cx, cy, t){
-    const flick = 0.6 + 0.4*Math.sin(t*2.6) + (Math.sin(t*17.0)*0.08);
-    const glow = 12 + 10*(0.5+0.5*Math.sin(t*3.2));
-    const shine = 0.35 + 0.65*(0.5+0.5*Math.sin(t*1.25));
+  function drawScene(state, dim=false){
+    drawBackground();
+    drawPlatforms(state.platforms);
+    if (state.door) drawDoor(state.door);
+    drawCoins(state.coins);
+    drawLoot(state.loots);
 
-    ctx.save();
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
+    for (const e of state.enemies) {
+      const x = e.x - cam.x;
+      const y = e.y - cam.y;
+      const flip = (e.face === -1);
+      const name = e.dead ? "die" : e.anim;
+      const scale = (e.tier==="boss") ? 1.45 : (e.tier==="elite" ? 1.15 : 1.0);
+      slimeSheet.draw(name, x, y-8, e.animT, scale, flip, e.hitCd>0 ? 0.75 : 1);
 
-    ctx.font = "900 46px system-ui, -apple-system, Segoe UI";
-    ctx.shadowColor = `rgba(91,140,255,${0.55*flick})`;
-    ctx.shadowBlur = glow;
-    ctx.fillStyle = `rgba(235,240,255,0.92)`;
-    ctx.fillText("보스게이트", cx, cy-10);
+      if (!e.dead) {
+        const pct = clamp(e.hp/e.hpMax, 0,1);
+        ctx.fillStyle = "rgba(0,0,0,0.35)";
+        ctx.fillRect(x-34*scale, y-56*scale, 68*scale, 8);
+        ctx.fillStyle = (e.tier==="boss") ? "rgba(255,91,110,0.85)" : "rgba(46,229,157,0.85)";
+        ctx.fillRect(x-34*scale, y-56*scale, 68*scale*pct, 8);
+      }
+    }
 
-    ctx.font = "800 16px ui-monospace, Menlo, Consolas";
-    ctx.shadowColor = `rgba(255,235,120,${0.35*shine})`;
-    ctx.shadowBlur = 10;
-    ctx.fillStyle = `rgba(255,235,120,0.85)`;
-    ctx.fillText("BOSS GATE", cx, cy+26);
+    const p = state.player;
+    const px = p.x - cam.x;
+    const py = p.y - cam.y;
+    const flipP = (p.face === -1);
+    playerSheet.draw(p.anim, px, py-10, p.animT, 1.15, flipP, p.inv>0 ? 0.65 : 1);
 
-    const w = 520, h = 64;
-    const x0 = cx - w/2, y0 = cy - 42;
-    const sweepX = x0 + (t*220 % (w+160)) - 80;
-    const grad = ctx.createLinearGradient(sweepX, 0, sweepX+120, 0);
-    grad.addColorStop(0, "rgba(255,255,255,0)");
-    grad.addColorStop(0.5, `rgba(255,255,255,${0.25*shine})`);
-    grad.addColorStop(1, "rgba(255,255,255,0)");
+    for (const f of state.fx) f.draw(cam);
+    for (const t of state.dmgText) t.draw(cam);
+    for (const pa of state.parts) pa.draw(cam);
 
-    ctx.globalAlpha = 1;
-    ctx.fillStyle = grad;
-    roundRect(x0, y0, w, h, 12, true, false);
-
-    ctx.restore();
+    if (dim) {
+      ctx.fillStyle = "rgba(0,0,0,0.35)";
+      ctx.fillRect(0,0,VIEW_W,VIEW_H);
+    }
+    drawHud(state);
   }
 
+  // -------------------- MENU / OPTIONS --------------------
   function drawMenu(state){
     drawBackground();
     const px = VIEW_W*0.5-260, py = VIEW_H*0.5-190;
-    panel(px, py, 520, 380, " ");
-    drawBossGateLogo(VIEW_W*0.5, VIEW_H*0.5-110, state.t);
+    panel(px, py, 520, 380, "보스게이트");
 
     ctx.fillStyle = "rgba(235,240,255,0.75)";
     ctx.font = "14px system-ui, -apple-system, Segoe UI";
     ctx.textAlign = "center";
-    ctx.fillText("스테이지를 뚫고, 보스문을 부숴라.", VIEW_W*0.5, VIEW_H*0.5-62);
+    ctx.fillText("스테이지를 뚫고, 보스문을 부숴라.", VIEW_W*0.5, VIEW_H*0.5-110);
     ctx.textAlign = "left";
 
-    const bx = VIEW_W*0.5-180, by = VIEW_H*0.5-30, bw=360, bh=52;
+    const bx = VIEW_W*0.5-180, by = VIEW_H*0.5-70, bw=360, bh=52;
     const hasSave = !!load();
 
     btn(bx, by, bw, bh, "새 게임 시작", true);
@@ -1385,7 +1389,7 @@
 
     ctx.fillStyle = "rgba(235,240,255,0.55)";
     ctx.font = "12px ui-monospace, Menlo, Consolas";
-    ctx.fillText("모바일: 터치 버튼 / PC: 방향키+Z/X+Space+H+I", VIEW_W*0.5-240, VIEW_H*0.5+210);
+    ctx.fillText("모바일: 터치 버튼 / PC: 방향키+Z/X+Space+H+I+ESC", VIEW_W*0.5-240, VIEW_H*0.5+210);
   }
 
   function drawOptions(state){
@@ -1397,68 +1401,17 @@
     btn(bx, by, bw, bh, `음소거: ${state.opt.muted ? "ON" : "OFF"}`, !state.opt.muted);
     btn(bx, by+64, bw, bh, `BGM: ${state.opt.bgm ? "ON" : "OFF"}`, state.opt.bgm);
     btn(bx, by+128, bw, bh, `SFX: ${state.opt.sfx ? "ON" : "OFF"}`, state.opt.sfx);
-    btn(bx, by+212, bw, bh, "뒤로가기(ESC/⚙)", true);
+    btn(bx, by+212, bw, bh, "뒤로가기(ESC)", true);
 
     if (hitBtn(bx,by,bw,bh)) { state.opt.muted = !state.opt.muted; applyOptions(state); save(state); }
     if (hitBtn(bx,by+64,bw,bh)) { state.opt.bgm = !state.opt.bgm; applyOptions(state); save(state); }
     if (hitBtn(bx,by+128,bw,bh)) { state.opt.sfx = !state.opt.sfx; applyOptions(state); save(state); }
     if (hitBtn(bx,by+212,bw,bh)) { state.gs = "MENU"; }
 
-    ctx.fillStyle = "rgba(235,240,255,0.65)";
-    ctx.font = "13px system-ui, -apple-system, Segoe UI";
-    ctx.fillText("오디오가 안 나면 화면을 한 번 탭/클릭해서 언락해줘.", VIEW_W*0.5-200, VIEW_H*0.5+70);
+    if (pressed.menu) { pressed.menu=false; state.gs="MENU"; }
   }
 
-  function drawScene(state, dim=false){
-    drawBackground();
-    drawPlatforms(state.platforms);
-    if (state.door) drawDoor(state.door);
-    drawCoins(state.coins);
-    drawLoot(state.loots);
-
-    for (const e of state.enemies) {
-      const x = e.x - cam.x;
-      const y = e.y - cam.y;
-      const flip = (e.face === -1);
-      const name = e.dead ? "die" : e.anim;
-      const scale = (e.tier==="boss") ? 1.45 : (e.tier==="elite" ? 1.15 : 1.0);
-      slimeSheet.draw(name, x, y-8, e.animT, scale, flip, e.hitCd>0 ? 0.75 : 1);
-
-      if (!e.dead) {
-        const pct = clamp(e.hp/e.hpMax, 0,1);
-        ctx.fillStyle = "rgba(0,0,0,0.35)";
-        ctx.fillRect(x-34*scale, y-56*scale, 68*scale, 8);
-        ctx.fillStyle = (e.tier==="boss") ? "rgba(255,91,110,0.85)" : "rgba(46,229,157,0.85)";
-        ctx.fillRect(x-34*scale, y-56*scale, 68*scale*pct, 8);
-
-        ctx.fillStyle = "rgba(235,240,255,0.75)";
-        ctx.font = "10px ui-monospace, Menlo, Consolas";
-        ctx.fillText(`${Math.floor(e.hp)}/${e.hpMax}`, x-30*scale, y-60*scale);
-      }
-    }
-
-    const p = state.player;
-    const px = p.x - cam.x;
-    const py = p.y - cam.y;
-    const flipP = (p.face === -1);
-    playerSheet.draw(p.anim, px, py-10, p.animT, 1.15, flipP, p.inv>0 ? 0.65 : 1);
-
-    for (const f of state.fx) f.draw(cam);
-    for (const t of state.dmgText) t.draw(cam);
-    for (const pa of state.parts) pa.draw(cam);
-
-    if (dim) {
-      ctx.fillStyle = "rgba(0,0,0,0.35)";
-      ctx.fillRect(0,0,VIEW_W,VIEW_H);
-    }
-    drawHud(state);
-  }
-
-  function hardExitNow(){
-    try { window.close(); } catch {}
-    try { location.replace("about:blank"); } catch { location.href = "about:blank"; }
-  }
-
+  // -------------------- PAUSE MENU --------------------
   function drawPause(state){
     drawScene(state, true);
 
@@ -1476,9 +1429,10 @@
 
     const items = [
       { t:"재개", hot:true, fn:()=> state.gs="PLAY" },
+      { t:"인벤토리(🎒/I)", hot:false, fn:()=> state.gs="INV" },
+      { t:"상점/감정(🏪)", hot:false, fn:()=> state.gs="SHOP" },
       { t:"옵션", hot:false, fn:()=> state.gs="OPTIONS" },
       { t:"저장 후 타이틀로", hot:false, fn:()=> { save(state); state.gs="MENU"; state.msg="저장 완료. 타이틀로 이동."; state.msgT=1.5; } },
-      { t:"게임 종료(완전 탈출)", hot:true, fn:()=> { hardExitNow(); state.gs="EXIT"; } },
     ];
 
     for (let i=0;i<items.length;i++){
@@ -1487,23 +1441,470 @@
       if (hitBtn(bx, y, bw, bh)) items[i].fn();
     }
 
+    ctx.fillStyle = "rgba(235,240,255,0.65)";
+    ctx.font = "12px ui-monospace, Menlo, Consolas";
+    ctx.fillText("ESC: 닫기 / I: 인벤 / (상점에서 포션 구매·감정·판매)", bx, py+365);
+
     if (pressed.menu) { pressed.menu = false; state.gs = "PLAY"; }
+    if (pressed.inv) { pressed.inv = false; state.gs = "INV"; }
   }
 
-  function drawExitScreen(){
-    ctx.fillStyle = "#050812";
-    ctx.fillRect(0,0,VIEW_W,VIEW_H);
-    ctx.fillStyle = "rgba(235,240,255,0.92)";
-    ctx.font = "900 28px system-ui, -apple-system, Segoe UI";
-    ctx.textAlign = "center";
-    ctx.fillText("게임 종료", VIEW_W/2, VIEW_H/2 - 10);
-    ctx.font = "14px system-ui, -apple-system, Segoe UI";
-    ctx.fillStyle = "rgba(235,240,255,0.70)";
-    ctx.fillText("브라우저가 탭 닫기를 막으면 빈 화면으로 이동합니다.", VIEW_W/2, VIEW_H/2 + 24);
-    ctx.textAlign = "left";
+  // -------------------- INVENTORY --------------------
+  function getAllItems(state){
+    const p = state.player;
+    const items = [];
+    for (const s of SLOTS){
+      if (p.equip[s]) items.push({ it:p.equip[s], where:"equip" });
+    }
+    for (const it of p.invItems) items.push({ it, where:"bag" });
+    return items;
   }
 
-  // -------------------- updatePlay (전투/이동/드랍) --------------------
+  function invSelect(state, id){
+    state.invSelId = id;
+  }
+
+  function equipFromBag(state, itemId){
+    const p = state.player;
+    const idx = p.invItems.findIndex(x=>x.id===itemId);
+    if (idx < 0) return false;
+    const it = p.invItems[idx];
+    const slot = it.slot;
+    const cur = p.equip[slot];
+    if (cur) p.invItems.push(cur);
+    p.invItems.splice(idx,1);
+    p.equip[slot] = it;
+    p.autoEquipBest(); // 안정적으로 hp 갱신
+    return true;
+  }
+
+  function unequipToBag(state, slot){
+    const p = state.player;
+    const cur = p.equip[slot];
+    if (!cur) return false;
+    p.invItems.push(cur);
+    p.equip[slot] = null;
+    p.autoEquipBest();
+    return true;
+  }
+
+  function sellItemFromBag(state, itemId){
+    const p = state.player;
+    const idx = p.invItems.findIndex(x=>x.id===itemId);
+    if (idx < 0) return false;
+    const it = p.invItems[idx];
+    const price = sellPrice(it);
+    p.gold += price;
+    p.invItems.splice(idx,1);
+    audio.playCoin();
+    state.msg = `판매: ${price}G`;
+    state.msgT = 1.2;
+    if (state.invSelId === itemId) state.invSelId = null;
+    return true;
+  }
+
+  function appraiseOne(state, itemId){
+    const p = state.player;
+    const it = p.invItems.find(x=>x.id===itemId) || Object.values(p.equip).find(x=>x && x.id===itemId);
+    if (!it) return false;
+    if (it.identified) { state.msg="이미 감정된 아이템."; state.msgT=1.1; return false; }
+
+    // 감정권 우선, 없으면 골드
+    if (p.appraiseTickets > 0) {
+      p.appraiseTickets -= 1;
+      appraise(it);
+      audio.playCoin();
+      state.msg = "감정 완료! (감정권 -1)";
+      state.msgT = 1.4;
+      return true;
+    }
+    if (p.gold < APPRAISE_PRICE) {
+      state.msg = `골드 부족! (감정 ${APPRAISE_PRICE}G 필요)`;
+      state.msgT = 1.4;
+      return false;
+    }
+    p.gold -= APPRAISE_PRICE;
+    appraise(it);
+    audio.playCoin();
+    state.msg = `감정 완료! (-${APPRAISE_PRICE}G)`;
+    state.msgT = 1.4;
+    return true;
+  }
+
+  function drawItemDetail(state, x, y, w, h, it){
+    ctx.save();
+    ctx.fillStyle = "rgba(255,255,255,0.06)";
+    ctx.strokeStyle = "rgba(255,255,255,0.12)";
+    roundRect(x,y,w,h,12,true,true);
+
+    ctx.fillStyle = rarColor(it.rar);
+    ctx.font = "900 16px system-ui, -apple-system, Segoe UI";
+    ctx.fillText(`[${it.rar}] ${it.name} ${it.identified?"":"(미감정)"}`, x+14, y+28);
+
+    ctx.fillStyle = "rgba(235,240,255,0.80)";
+    ctx.font = "12px ui-monospace, Menlo, Consolas";
+    ctx.fillText(`${slotName(it.slot)} | iLv ${it.ilvl} | PWR ${itemPow(it)} | 판매 ${sellPrice(it)}G`, x+14, y+48);
+
+    const baseY = y+72;
+    ctx.fillStyle = "rgba(235,240,255,0.86)";
+    ctx.font = "bold 13px ui-monospace, Menlo, Consolas";
+    ctx.fillText(`기본: ATK ${it.stats.atk} DEF ${it.stats.def} HP ${it.stats.hp} CRIT ${it.stats.crit}% SPD ${it.stats.spd}`, x+14, baseY);
+
+    ctx.fillStyle = "rgba(235,240,255,0.72)";
+    ctx.font = "12px ui-monospace, Menlo, Consolas";
+    let yy = baseY+20;
+
+    if (!it.identified) {
+      ctx.fillStyle = "rgba(255,207,91,0.88)";
+      ctx.fillText("잠재 옵션: ??? (감정 필요)", x+14, yy);
+      yy += 18;
+    } else if (it.aff && it.aff.length) {
+      ctx.fillStyle = "rgba(91,140,255,0.85)";
+      ctx.fillText("추가 옵션:", x+14, yy); yy+=18;
+      ctx.fillStyle = "rgba(235,240,255,0.75)";
+      for (const a of it.aff) {
+        ctx.fillText(`- ${a.n} +${a.v}${(a.k.endsWith("P")||a.k==="crit"||a.k==="ls")?"%":""}`, x+24, yy);
+        yy += 16;
+      }
+    } else {
+      ctx.fillStyle = "rgba(235,240,255,0.55)";
+      ctx.fillText("추가 옵션 없음", x+14, yy);
+      yy += 18;
+    }
+
+    ctx.restore();
+  }
+
+  function drawInventory(state){
+    drawScene(state, true);
+
+    const px = 40, py = 54, pw = 880, ph = 430;
+    panel(px, py, pw, ph, "인벤토리 (I/ESC: 닫기)");
+
+    const p = state.player;
+
+    // 상단 탭 버튼
+    const tabY = py+44;
+    const bInv = {x:px+18, y:tabY, w:160, h:38};
+    const bShop = {x:px+18+170, y:tabY, w:160, h:38};
+
+    btn(bInv.x,bInv.y,bInv.w,bInv.h,"인벤토리", true);
+    btn(bShop.x,bShop.y,bShop.w,bShop.h,"상점/감정", false);
+    if (hitBtn(bShop.x,bShop.y,bShop.w,bShop.h)) state.gs="SHOP";
+
+    // 좌측: 장비 + 가방 리스트
+    const leftX = px+18;
+    const leftY = py+92;
+    const leftW = 520;
+    const leftH = ph-120;
+
+    ctx.fillStyle = "rgba(255,255,255,0.06)";
+    ctx.strokeStyle = "rgba(255,255,255,0.12)";
+    roundRect(leftX, leftY, leftW, leftH, 12, true, true);
+
+    // 우측: 상세 + 버튼
+    const rightX = leftX+leftW+16;
+    const rightY = leftY;
+    const rightW = pw - (rightX - px) - 18;
+    const rightH = leftH;
+
+    // 리스트 아이템들
+    const all = getAllItems(state);
+    // 정렬: 장착 먼저, 그 다음 PWR desc
+    all.sort((a,b)=>{
+      if (a.where !== b.where) return a.where==="equip" ? -1 : 1;
+      return itemPow(b.it)-itemPow(a.it);
+    });
+
+    const rowH = 34;
+    const innerPad = 12;
+    const clipX = leftX+innerPad, clipY = leftY+innerPad+34, clipW = leftW-innerPad*2, clipH = leftH-innerPad*2-34;
+
+    // 헤더
+    ctx.fillStyle = "rgba(235,240,255,0.88)";
+    ctx.font = "bold 13px ui-monospace, Menlo, Consolas";
+    ctx.fillText(`장착/가방 (스크롤: 마우스휠)`, leftX+14, leftY+28);
+
+    // 스크롤 처리
+    const maxRows = Math.floor(clipH/rowH);
+    const maxScroll = Math.max(0, all.length - maxRows);
+    if (pointer.wheelY !== 0) {
+      const delta = Math.sign(pointer.wheelY);
+      state.invScroll = clamp(state.invScroll + delta, 0, maxScroll);
+    }
+
+    // 클리핑
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(clipX, clipY, clipW, clipH);
+    ctx.clip();
+
+    for (let i=0;i<all.length;i++){
+      const row = i - state.invScroll;
+      if (row < 0 || row >= maxRows) continue;
+      const y = clipY + row*rowH;
+      const it = all[i].it;
+      const where = all[i].where;
+
+      const isSel = (state.invSelId === it.id);
+      ctx.fillStyle = isSel ? "rgba(91,140,255,0.16)" : (i%2===0 ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0)");
+      ctx.fillRect(clipX, y, clipW, rowH-2);
+
+      ctx.fillStyle = rarColor(it.rar);
+      ctx.font = "bold 12px ui-monospace, Menlo, Consolas";
+      ctx.fillText(where==="equip" ? "E" : "B", clipX+6, y+22);
+
+      ctx.fillStyle = "rgba(235,240,255,0.86)";
+      ctx.font = "12px ui-monospace, Menlo, Consolas";
+      const txt = itemLine(it);
+      ctx.fillText(txt, clipX+28, y+22);
+
+      // 클릭 선택
+      if (pointer.clicked && pointer.x>=clipX && pointer.x<=clipX+clipW && pointer.y>=y && pointer.y<=y+rowH-2){
+        invSelect(state, it.id);
+      }
+    }
+    ctx.restore();
+
+    // 선택된 아이템 가져오기
+    const sel = all.find(x=>x.it.id===state.invSelId)?.it || null;
+
+    if (!sel) {
+      ctx.fillStyle = "rgba(235,240,255,0.70)";
+      ctx.font = "14px system-ui, -apple-system, Segoe UI";
+      ctx.fillText("왼쪽에서 아이템을 선택해.", rightX+10, rightY+30);
+    } else {
+      drawItemDetail(state, rightX, rightY, rightW, rightH-120, sel);
+
+      // 버튼 영역
+      const bbY = rightY + rightH - 110;
+      const bw = (rightW - 20);
+      const b1 = {x:rightX+10, y:bbY, w:bw, h:40};
+      const b2 = {x:rightX+10, y:bbY+46, w:bw, h:40};
+
+      const inEquip = Object.values(p.equip).some(x=>x && x.id===sel.id);
+
+      // 1번: 장착/해제
+      if (inEquip) {
+        btn(b1.x,b1.y,b1.w,b1.h, `해제(가방으로)`, true);
+        if (hitBtn(b1.x,b1.y,b1.w,b1.h)) {
+          unequipToBag(state, sel.slot);
+          state.msg="해제 완료";
+          state.msgT=1.2;
+          save(state);
+        }
+      } else {
+        btn(b1.x,b1.y,b1.w,b1.h, `장착`, true);
+        if (hitBtn(b1.x,b1.y,b1.w,b1.h)) {
+          equipFromBag(state, sel.id);
+          state.msg="장착 완료";
+          state.msgT=1.2;
+          save(state);
+        }
+      }
+
+      // 2번: 감정 or 판매
+      if (!sel.identified) {
+        const costTxt = (p.appraiseTickets>0) ? "감정(감정권 1)" : `감정(${APPRAISE_PRICE}G)`;
+        btn(b2.x,b2.y,b2.w,b2.h, costTxt, true);
+        if (hitBtn(b2.x,b2.y,b2.w,b2.h)) {
+          appraiseOne(state, sel.id);
+          save(state);
+        }
+      } else {
+        // 판매는 가방 아이템만 가능(장착 중 판매는 실수 방지)
+        const canSell = p.invItems.some(x=>x.id===sel.id);
+        btn(b2.x,b2.y,b2.w,b2.h, canSell ? `판매(+${sellPrice(sel)}G)` : "판매(장착 중 불가)", canSell);
+        if (canSell && hitBtn(b2.x,b2.y,b2.w,b2.h)) {
+          sellItemFromBag(state, sel.id);
+          save(state);
+        }
+      }
+    }
+
+    // ESC/I 처리
+    if (pressed.menu) { pressed.menu=false; state.gs="PAUSE"; }
+    if (pressed.inv) { pressed.inv=false; state.gs="PLAY"; } // I로 닫기
+    if (keys.has("escape")) { /* 키업까지 기다리되, 눌렸으면 닫는 효과를 주기 위해 */ }
+    if (pressed._escClose) {} // no-op
+  }
+
+  // -------------------- SHOP --------------------
+  function sellAllNormal(state){
+    const p = state.player;
+    const before = p.invItems.length;
+    let gain = 0;
+    // 일반(N)만 일괄 판매
+    const keep = [];
+    for (const it of p.invItems){
+      if (it.rar === "N") gain += sellPrice(it);
+      else keep.push(it);
+    }
+    const sold = before - keep.length;
+    p.invItems = keep;
+    p.gold += gain;
+    if (sold>0) audio.playCoin();
+    state.msg = sold>0 ? `일반템 ${sold}개 판매 (+${gain}G)` : "판매할 일반템이 없다.";
+    state.msgT = 1.4;
+  }
+
+  function appraiseAll(state){
+    const p = state.player;
+    const targets = p.invItems.filter(it=>!it.identified);
+    if (!targets.length) { state.msg="감정할 미감정 아이템이 없다."; state.msgT=1.2; return; }
+
+    let done = 0;
+    for (const it of targets){
+      if (p.appraiseTickets > 0) {
+        p.appraiseTickets--;
+        appraise(it);
+        done++;
+      } else if (p.gold >= APPRAISE_PRICE) {
+        p.gold -= APPRAISE_PRICE;
+        appraise(it);
+        done++;
+      } else {
+        break;
+      }
+    }
+    if (done>0) audio.playCoin();
+    state.msg = (done>0) ? `일괄 감정 ${done}개 완료` : "감정권/골드가 부족하다.";
+    state.msgT = 1.4;
+  }
+
+  function buyPotion(state, qty){
+    const p = state.player;
+    const can = Math.min(qty, POTION_MAX - p.potions);
+    if (can <= 0) { state.msg="포션이 이미 가득하다."; state.msgT=1.2; return; }
+    const cost = can * POTION_PRICE;
+    if (p.gold < cost) { state.msg=`골드 부족! (${cost}G 필요)`; state.msgT=1.3; return; }
+    p.gold -= cost;
+    p.potions += can;
+    audio.playCoin();
+    state.msg = `포션 ${can}개 구매 (-${cost}G)`;
+    state.msgT = 1.3;
+  }
+
+  function drawShop(state){
+    drawScene(state, true);
+
+    const px = 40, py = 54, pw = 880, ph = 430;
+    panel(px, py, pw, ph, "상점 / 감정 (ESC: 뒤로)");
+
+    // 탭
+    const tabY = py+44;
+    const bInv = {x:px+18, y:tabY, w:160, h:38};
+    const bShop = {x:px+18+170, y:tabY, w:160, h:38};
+
+    btn(bInv.x,bInv.y,bInv.w,bInv.h,"인벤토리", false);
+    btn(bShop.x,bShop.y,bShop.w,bShop.h,"상점/감정", true);
+    if (hitBtn(bInv.x,bInv.y,bInv.w,bInv.h)) state.gs="INV";
+
+    const p = state.player;
+
+    // 좌측: 상점 메뉴
+    const leftX = px+18, leftY = py+92, leftW = 420, leftH = ph-120;
+    ctx.fillStyle="rgba(255,255,255,0.06)";
+    ctx.strokeStyle="rgba(255,255,255,0.12)";
+    roundRect(leftX,leftY,leftW,leftH,12,true,true);
+
+    ctx.fillStyle="rgba(235,240,255,0.88)";
+    ctx.font="bold 13px ui-monospace, Menlo, Consolas";
+    ctx.fillText(`GOLD ${p.gold}G | 포션 ${p.potions}/${POTION_MAX} | 감정권 ${p.appraiseTickets}`, leftX+14, leftY+28);
+
+    const by = leftY+46;
+    const bw = leftW-28;
+    const bh = 44;
+    const gap = 10;
+
+    const b1 = {x:leftX+14, y:by, w:bw, h:bh};
+    const b2 = {x:leftX+14, y:by+(bh+gap), w:bw, h:bh};
+    const b3 = {x:leftX+14, y:by+2*(bh+gap), w:bw, h:bh};
+    const b4 = {x:leftX+14, y:by+3*(bh+gap), w:bw, h:bh};
+    const b5 = {x:leftX+14, y:by+4*(bh+gap), w:bw, h:bh};
+
+    btn(b1.x,b1.y,b1.w,b1.h, `포션 1개 구매 (${POTION_PRICE}G)`, true);
+    btn(b2.x,b2.y,b2.w,b2.h, `포션 3개 구매 (${POTION_PRICE*3}G)`, true);
+    btn(b3.x,b3.y,b3.w,b3.h, `미감정 일괄 감정 (감정권/골드)`, true);
+    btn(b4.x,b4.y,b4.w,b4.h, `일반템(N) 일괄 판매`, false);
+    btn(b5.x,b5.y,b5.w,b5.h, `뒤로가기(ESC)`, true);
+
+    if (hitBtn(b1.x,b1.y,b1.w,b1.h)) { buyPotion(state,1); save(state); }
+    if (hitBtn(b2.x,b2.y,b2.w,b2.h)) { buyPotion(state,3); save(state); }
+    if (hitBtn(b3.x,b3.y,b3.w,b3.h)) { appraiseAll(state); save(state); }
+    if (hitBtn(b4.x,b4.y,b4.w,b4.h)) { sellAllNormal(state); save(state); }
+    if (hitBtn(b5.x,b5.y,b5.w,b5.h)) { state.gs="PAUSE"; }
+
+    // 우측: 안내 + 미감정 목록
+    const rightX = leftX+leftW+16, rightY=leftY, rightW=pw-(rightX-px)-18, rightH=leftH;
+    ctx.fillStyle="rgba(255,255,255,0.06)";
+    ctx.strokeStyle="rgba(255,255,255,0.12)";
+    roundRect(rightX,rightY,rightW,rightH,12,true,true);
+
+    ctx.fillStyle="rgba(235,240,255,0.88)";
+    ctx.font="bold 13px ui-monospace, Menlo, Consolas";
+    ctx.fillText("미감정 아이템 목록", rightX+14, rightY+28);
+
+    const list = p.invItems.filter(it=>!it.identified);
+    ctx.fillStyle="rgba(235,240,255,0.60)";
+    ctx.font="12px ui-monospace, Menlo, Consolas";
+    ctx.fillText(`개수: ${list.length} | 감정권 우선 사용, 없으면 1개당 ${APPRAISE_PRICE}G`, rightX+14, rightY+48);
+
+    const rowH = 28;
+    const clipX = rightX+12, clipY = rightY+64, clipW = rightW-24, clipH = rightH-76;
+    const maxRows = Math.floor(clipH/rowH);
+    const maxScroll = Math.max(0, list.length - maxRows);
+
+    if (pointer.wheelY !== 0) {
+      const delta = Math.sign(pointer.wheelY);
+      state.shopScroll = clamp(state.shopScroll + delta, 0, maxScroll);
+    }
+
+    ctx.save();
+    ctx.beginPath(); ctx.rect(clipX,clipY,clipW,clipH); ctx.clip();
+    for (let i=0;i<list.length;i++){
+      const row = i - state.shopScroll;
+      if (row<0 || row>=maxRows) continue;
+      const y = clipY + row*rowH;
+      const it = list[i];
+
+      ctx.fillStyle = (i%2===0) ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0)";
+      ctx.fillRect(clipX,y,clipW,rowH-2);
+
+      ctx.fillStyle = rarColor(it.rar);
+      ctx.font="bold 12px ui-monospace, Menlo, Consolas";
+      ctx.fillText(`[${it.rar}]`, clipX+6, y+19);
+
+      ctx.fillStyle="rgba(235,240,255,0.80)";
+      ctx.font="12px ui-monospace, Menlo, Consolas";
+      ctx.fillText(`${slotName(it.slot)} | ${it.name} | iLv ${it.ilvl} | 감정 필요`, clipX+62, y+19);
+
+      // 클릭하면 1개 감정
+      const bX = clipX + clipW - 92;
+      const bY = y + 3;
+      const bW = 84;
+      const bH = 22;
+
+      const can = (p.appraiseTickets>0) || (p.gold>=APPRAISE_PRICE);
+      ctx.fillStyle = can ? "rgba(91,140,255,0.22)" : "rgba(255,255,255,0.06)";
+      ctx.strokeStyle = can ? "rgba(91,140,255,0.52)" : "rgba(255,255,255,0.10)";
+      roundRect(bX,bY,bW,bH,10,true,true);
+      ctx.fillStyle = "rgba(235,240,255,0.92)";
+      ctx.font="bold 12px system-ui, -apple-system, Segoe UI";
+      ctx.fillText("감정", bX+24, bY+16);
+
+      if (pointer.clicked && pointer.x>=bX && pointer.x<=bX+bW && pointer.y>=bY && pointer.y<=bY+bH) {
+        appraiseOne(state, it.id);
+        save(state);
+      }
+    }
+    ctx.restore();
+
+    if (pressed.menu) { pressed.menu=false; state.gs="PAUSE"; }
+    if (pressed.inv) { pressed.inv=false; state.gs="INV"; }
+  }
+
+  // -------------------- PLAY update --------------------
   function updatePlay(state, dt){
     const p = state.player;
     const d = p.derived();
@@ -1514,15 +1915,10 @@
     p.hitCd = Math.max(0, p.hitCd - dt);
     p.attackLock = Math.max(0, p.attackLock - dt);
     p.potionCd = Math.max(0, p.potionCd - dt);
-    p.noHitT += dt;
-
-    applyRegen(state, dt);
 
     const ax = moveAxis();
-
     if (p.attackLock > 0 && p.onGround) p.vx = 0;
     else p.vx = ax * d.spd * dt;
-
     if (ax !== 0) p.face = ax > 0 ? 1 : -1;
 
     if (pressed.jump && p.onGround) {
@@ -1570,8 +1966,6 @@
           snapToGround(e);
 
           hit++;
-          applyLifesteal(state, dmg);
-
           spawnHitFX(state, e.x, e.y - 14);
           state.dmgText.push(new DamageText(
             e.x, e.y - 64, `${crit ? "✦" : ""}${dmg}`,
@@ -1611,8 +2005,6 @@
           e.vy = 0;
           snapToGround(e);
 
-          applyLifesteal(state, dmg);
-
           spawnHitFX(state, e.x, e.y - 14);
           state.dmgText.push(new DamageText(
             e.x, e.y - 64, `${crit ? "✦" : ""}${dmg}`,
@@ -1643,11 +2035,6 @@
       const dir = dx > 0 ? 1 : -1;
       e.face = dir;
 
-      if (e.onGround && chase && e.jumpCd <= 0 && ad > 140 && Math.random() < 0.002) {
-        e.vy = -420;
-        e.jumpCd = 1.25;
-      }
-
       e.vx = chase ? (dir * e.spd * dt * 0.75) : (Math.sin(e.aiT*1.2) * e.spd * dt * 0.28);
       e.vy += 1100 * dt;
 
@@ -1667,7 +2054,6 @@
         p.hp = clamp(p.hp - dmg, 0, d.hpMax);
         p.inv = 0.55;
         p.hitCd = CONTACT_DAMAGE_COOLDOWN;
-        p.noHitT = 0;
 
         audio.playHit();
         state.dmgText.push(new DamageText(p.x, p.y - 64, `-${dmg}`, "rgba(255,91,110,0.95)"));
@@ -1677,7 +2063,6 @@
           const lost = Math.round(p.gold * 0.08);
           p.gold = Math.max(0, p.gold - lost);
           p.hp = d.hpMax;
-          p.noHitT = 999;
           state.gs = "MENU";
           state.msg = `보스게이트에서 쓰러졌다… ${lost}G 잃음.`;
           state.msgT = 2.0;
@@ -1769,16 +2154,19 @@
     if (pointer.clicked && hotGear) { state.gs = "PAUSE"; save(state); }
 
     const hotPotionHud = (pointer.x>=HUD_POTION_BTN.x && pointer.x<=HUD_POTION_BTN.x+HUD_POTION_BTN.w &&
-                          pointer.y>=HUD_POTION_BTN.y && pointer.y<=HUD_POTION_BTN.y+HUD_MENU_BTN.h);
+                          pointer.y>=HUD_POTION_BTN.y && pointer.y<=HUD_POTION_BTN.y+HUD_POTION_BTN.h);
     if (pointer.clicked && hotPotionHud) { tryUsePotion(state); }
 
     const hotInv = (pointer.x>=HUD_INV_BTN.x && pointer.x<=HUD_INV_BTN.x+HUD_INV_BTN.w &&
                     pointer.y>=HUD_INV_BTN.y && pointer.y<=HUD_INV_BTN.y+HUD_INV_BTN.h);
-    if (pointer.clicked && hotInv) { state.gs = "PAUSE"; save(state); }
+    if (pointer.clicked && hotInv) { state.gs = "INV"; save(state); }
 
+    // 키로 메뉴/인벤
     if (pressed.menu) { pressed.menu = false; state.gs = "PAUSE"; save(state); return; }
+    if (pressed.inv) { pressed.inv = false; state.gs = "INV"; save(state); return; }
   }
 
+  // -------------------- Revive --------------------
   function revive(raw){
     const st = freshState();
     st.gs = raw.gs || "MENU";
@@ -1788,6 +2176,7 @@
     Object.assign(st.player, raw.player || {});
     st.player.invItems ??= [];
     st.player.equip ??= { weapon:null, armor:null, ring:null };
+    st.player.appraiseTickets ??= 0;
     for (const s of SLOTS) st.player.equip[s] = st.player.equip[s] || null;
 
     st.stageIndex = raw.stageIndex ?? st.stageIndex;
@@ -1810,13 +2199,14 @@
 
     st.invSelId = raw.invSelId ?? null;
     st.invScroll = raw.invScroll ?? 0;
+    st.shopScroll = raw.shopScroll ?? 0;
 
     st.t = 0;
     st.camX = raw.camX ?? 0;
     return st;
   }
 
-  // -------------------- main loop --------------------
+  // -------------------- Main Loop --------------------
   let state = load() ? revive(load()) : freshState();
   applyOptions(state);
   if (state.gs === "PLAY") rebuildStage(state);
@@ -1838,8 +2228,19 @@
     if (state.gs === "MENU") drawMenu(state);
     else if (state.gs === "OPTIONS") drawOptions(state);
     else if (state.gs === "PAUSE") drawPause(state);
-    else if (state.gs === "EXIT") drawExitScreen();
+    else if (state.gs === "INV") drawInventory(state);
+    else if (state.gs === "SHOP") drawShop(state);
     else drawScene(state);
+
+    // ESC 동작(상태별)
+    if (pressed.menu) {
+      // pressed.menu는 각 화면에서 처리하지만, 혹시 누락된 상태 대비
+      pressed.menu = false;
+      if (state.gs === "OPTIONS") state.gs = "MENU";
+      else if (state.gs === "INV" || state.gs === "SHOP") state.gs = "PAUSE";
+      else if (state.gs === "PAUSE") state.gs = "PLAY";
+      else if (state.gs === "PLAY") state.gs = "PAUSE";
+    }
 
     pointer.clicked = false;
     pointer.wheelY = 0;
