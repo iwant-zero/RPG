@@ -772,7 +772,6 @@
     return Math.max(5, Math.floor(base * rarMult * idBonus));
   }
   function appraiseCost(it){
-    // 감정 비용: 판매가 기반 + 희귀도 가산
     const base = Math.max(20, Math.floor(sellPrice(it)*0.35));
     const rarAdd = (it.rar==="SSR")?120:(it.rar==="SR")?70:(it.rar==="R")?35:0;
     return base + rarAdd;
@@ -1128,6 +1127,36 @@
   function goBack(state){
     const back = state.uiReturn || "MENU";
     state.gs = back;
+  }
+
+  /* =========================================================
+     ✅ PATCH: UI 상태(OPTIONS/INV/SHOP)에서 ESC/⚙/I/O/P 전역 복귀
+     ========================================================= */
+  function uiBackHandle(state){
+    const isUI = (state.gs === "OPTIONS" || state.gs === "INV" || state.gs === "SHOP");
+    if (!isUI) return;
+
+    // 키 기반 뒤로가기(ESC/P/I/O)
+    if (pressed.menu || pressed.inv || pressed.shop) {
+      pressed.menu = false;
+      pressed.inv = false;
+      pressed.shop = false;
+      goBack(state);
+      save(state);
+      return;
+    }
+
+    // HUD ⚙(캔버스) 클릭도 뒤로가기 처리
+    if (
+      pointer.clicked &&
+      pointer.x >= HUD_MENU_BTN.x && pointer.x <= HUD_MENU_BTN.x + HUD_MENU_BTN.w &&
+      pointer.y >= HUD_MENU_BTN.y && pointer.y <= HUD_MENU_BTN.y + HUD_MENU_BTN.h
+    ) {
+      pointer.clicked = false;
+      goBack(state);
+      save(state);
+      return;
+    }
   }
 
   function rollCrit(crit){ return (Math.random()*100) < crit; }
@@ -1520,7 +1549,7 @@
     if (hitBtn(bx,by+128,bw,bh)) { state.opt.sfx = !state.opt.sfx; applyOptions(state); save(state); }
     if (hitBtn(bx,by+212,bw,bh)) { goBack(state); save(state); }
 
-    // ✅ ESC/P로도 뒤로가기
+    // ESC/P로도 뒤로가기
     if (pressed.menu) { pressed.menu = false; goBack(state); save(state); }
 
     ctx.fillStyle = "rgba(235,240,255,0.65)";
@@ -1677,7 +1706,7 @@
       ctx.font = "11px ui-monospace, Menlo, Consolas";
       ctx.fillText(sb.slot.toUpperCase(), sb.x+118, sb.y+22);
 
-      // 장착 해제 버튼(클릭하면 인벤으로)
+      // 장착 해제 버튼
       const ux = sb.x+128, uy = sb.y+7;
       if (it) {
         ctx.fillStyle = "rgba(255,91,110,0.14)";
@@ -1850,7 +1879,6 @@
       }
 
       if (hitBtn(b1x,b1y+40,bW,bH)) {
-        // 상점에서 감정 탭으로 이동 + 선택 세팅
         state.shopSelId = sel.id;
         state.shopTab = "APPRAISE";
         openShop(state, "INV");
@@ -1873,7 +1901,7 @@
     ctx.font = "12px ui-monospace, Menlo, Consolas";
     ctx.fillText("휠: 목록 이동 | I/ESC/P: 닫기 | 상점에서 감정/물약 구매 가능", px+20, py+ph-18);
 
-    // ✅ 키로 닫기(복귀)
+    // ✅ 기존 키로 닫기 유지
     if (pressed.inv || pressed.menu) {
       pressed.inv = false;
       pressed.menu = false;
@@ -2139,7 +2167,7 @@
       ctx.fillText("팁: 감정 완료 후 판매가 상승하는 경향이 있음", cx+16, cy+ch-18);
     }
 
-    // ✅ ESC/P로 닫기
+    // 기존 ESC/P 닫기 유지
     if (pressed.menu) { pressed.menu=false; goBack(state); save(state); }
     if (pressed.shop) { pressed.shop=false; goBack(state); save(state); }
   }
@@ -2478,6 +2506,9 @@
     last = t;
 
     state.t += dt;
+
+    /* ✅ PATCH: UI 상태에서 전역 뒤로가기/복귀 처리 */
+    uiBackHandle(state);
 
     if (state.gs === "PLAY") updatePlay(state, dt);
 
