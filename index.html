@@ -1379,7 +1379,8 @@
       }
     }
 
-    if (hitBtn(bx,by+128,bw,bh)) state.gs = "OPTIONS";
+if (hitBtn(bx,by+128,bw,bh)) { state._optReturn = "MENU"; state.gs = "OPTIONS"; save(state); }
+
 
     if (hitBtn(bx,by+192,bw,bh)) {
       localStorage.removeItem(SAVE_KEY);
@@ -1431,7 +1432,8 @@
       { t:"재개", hot:true, fn:()=> state.gs="PLAY" },
       { t:"인벤토리(🎒/I)", hot:false, fn:()=> state.gs="INV" },
       { t:"상점/감정(🏪)", hot:false, fn:()=> state.gs="SHOP" },
-      { t:"옵션", hot:false, fn:()=> state.gs="OPTIONS" },
+{ t:"옵션", hot:false, fn:()=> { state._optReturn = "PAUSE"; state.gs="OPTIONS"; save(state); } },
+
       { t:"저장 후 타이틀로", hot:false, fn:()=> { save(state); state.gs="MENU"; state.msg="저장 완료. 타이틀로 이동."; state.msgT=1.5; } },
     ];
 
@@ -2151,7 +2153,11 @@
     // HUD 클릭(⚙/🧪/🎒)
     const hotGear = (pointer.x>=HUD_MENU_BTN.x && pointer.x<=HUD_MENU_BTN.x+HUD_MENU_BTN.w &&
                      pointer.y>=HUD_MENU_BTN.y && pointer.y<=HUD_MENU_BTN.y+HUD_MENU_BTN.h);
-    if (pointer.clicked && hotGear) { state.gs = "PAUSE"; save(state); }
+if (pointer.clicked && hotGear) {
+  state.gs = "PAUSE";
+  save(state);
+}
+
 
     const hotPotionHud = (pointer.x>=HUD_POTION_BTN.x && pointer.x<=HUD_POTION_BTN.x+HUD_POTION_BTN.w &&
                           pointer.y>=HUD_POTION_BTN.y && pointer.y<=HUD_POTION_BTN.y+HUD_POTION_BTN.h);
