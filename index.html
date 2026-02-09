@@ -83,6 +83,10 @@
 (() => {
   "use strict";
 
+  // ✅ GitHub Pages에서 스크립트가 중복 실행되며 '떨림/겹침' 나는 경우 방지
+  if (window.__BOSSGATE_RUNNING__) return;
+  window.__BOSSGATE_RUNNING__ = true;
+
   const canvas = document.getElementById("game");
   const ctx = canvas.getContext("2d", { alpha: false });
 
@@ -109,9 +113,10 @@
   const lerp = (a,b,t)=>a+(b-a)*t;
   function smoothFactor(dt, sharpness=18){ return 1 - Math.pow(0.001, dt*sharpness); }
 
+  // 키 기본 방지
   window.addEventListener("keydown", (e) => {
     const k = e.key.toLowerCase();
-    if (["arrowleft","arrowright","arrowup"," ","z","x","escape","i","p","h","enter","backspace"].includes(k)) {
+    if (["arrowleft","arrowright","arrowup"," ","z","x","escape","i","p","h","b","enter","backspace"].includes(k)) {
       e.preventDefault();
       e.stopPropagation();
     }
@@ -127,6 +132,7 @@
     } catch { return null; }
   }
 
+  // -------------------- Audio --------------------
   class AudioMan {
     constructor() {
       this.ctx = null; this.master=null; this.bgmGain=null; this.sfxGain=null;
@@ -179,8 +185,7 @@
         url: base + ext,
         score: this._scoreCanPlay(ext),
         idx
-      }))
-      .sort((a,b)=> (b.score - a.score) || (a.idx - b.idx));
+      })).sort((a,b)=> (b.score - a.score) || (a.idx - b.idx));
       return scored.map(x=>x.url);
     }
 
@@ -198,10 +203,8 @@
 
     async resolve(key){
       if (this._picked[key]) return this._picked[key];
-
       const base = this._bases[key];
       const urls = this._candidateUrls(base);
-
       for (const url of urls){
         if (await this._exists(url)) {
           this._picked[key] = url;
@@ -209,7 +212,6 @@
           return url;
         }
       }
-
       const fallback = urls[0] || (base + ".mp3");
       this._picked[key] = fallback;
       this._applySource(key, fallback);
@@ -219,7 +221,6 @@
     _applySource(key, url){
       const a = this.files[key];
       if (!a) return;
-      if (a.src && a.src.endsWith(url)) return;
       a.src = url;
       if (key === "bgm") a.loop = true;
       a.load();
@@ -371,7 +372,7 @@
 
   // -------------------- Input --------------------
   const keys = new Set();
-  const pressed = { jump:false, atk:false, skill:false, menu:false, inv:false, potion:false };
+  const pressed = { jump:false, atk:false, skill:false, menu:false, inv:false, potion:false, shop:false };
 
   window.addEventListener("keydown", (e) => {
     const k = e.key.toLowerCase();
@@ -383,20 +384,13 @@
     if (k === "escape" || k === "p") pressed.menu = true;
     if (k === "i") pressed.inv = true;
     if (k === "h") pressed.potion = true;
+    if (k === "b") pressed.shop = true; // ✅ 상점
   }, { passive:false });
 
   window.addEventListener("keyup", (e) => keys.delete(e.key.toLowerCase()), { passive:true });
 
-  // -------------------- Touch overlay --------------------
   const touch = document.getElementById("touch");
   const touchDown = new Set();
-
-  // ✅ PLAY 중에만 터치 버튼을 보여서, 메뉴/옵션/인벤이 가려지는 문제 제거
-  function setTouchVisible(v){
-    if (!touch) return;
-    touch.style.display = v ? "block" : "none";
-  }
-
   function setTouchKey(name, down) {
     if (down) touchDown.add(name);
     else touchDown.delete(name);
@@ -439,6 +433,12 @@
   }
   function wantAttack() { return pressed.atk || keys.has("z") || touchDown.has("atk"); }
   function wantSkill() { return pressed.skill || keys.has("x") || touchDown.has("skill"); }
+
+  // ✅ PLAY 상태에서만 모바일 버튼 표시(옵션/인벤/상점 화면 가림 방지)
+  function syncTouchVisibility(gs){
+    if (!touch) return;
+    touch.style.display = (gs === "PLAY") ? "block" : "none";
+  }
 
   // -------------------- Pointer --------------------
   let pointer = { x:0, y:0, down:false, clicked:false, wheelY:0 };
@@ -779,6 +779,7 @@
   // ---- Combat ----
   const ATTACK_LOCK_ATK = 0.18;
   const ATTACK_LOCK_SKL = 0.24;
+
   const CONTACT_DAMAGE_COOLDOWN = 0.22;
   const CONTACT_SEP_STRENGTH = 0.78;
 
@@ -989,11 +990,8 @@
       createdAt: isoNow(),
       updatedAt: isoNow(),
 
-      gs: "MENU", // MENU / PLAY / PAUSE / OPTIONS / INV / EXIT
+      gs: "MENU", // MENU / PLAY / PAUSE / OPTIONS / INV / SHOP / EXIT
       opt: { muted:false, bgm:true, sfx:true },
-
-      // ✅ 옵션 화면에서 뒤로 갈 목적지(메뉴에서 들어오면 MENU, 일시정지에서 들어오면 PAUSE)
-      optReturn: "MENU",
 
       player: p,
       stageIndex: 1,
@@ -1012,7 +1010,7 @@
       dmgText: [],
       parts: [],
 
-      msg: "보스문을 부숴라. (ESC/P 또는 ⚙: 메뉴, I/🎒: 인벤, H/🧪: 포션)",
+      msg: "보스문을 부숴라. (ESC/P 또는 ⚙: 메뉴, I/🎒: 인벤, H/🧪: 포션, B: 상점)",
       msgT: 2.2,
 
       t: 0,
@@ -1020,6 +1018,9 @@
 
       invSelId: null,
       invScroll: 0,
+
+      _optBack: "MENU",
+      _shopBack: "PAUSE",
     };
   }
 
@@ -1076,13 +1077,6 @@
     Object.assign(state, fresh);
     rebuildStage(state);
     state.gs = "PLAY";
-    save(state);
-  }
-
-  // ✅ 옵션 화면 열기: 어디서 열었는지 기록
-  function openOptions(state, fromGs){
-    state.optReturn = fromGs || "MENU";
-    state.gs = "OPTIONS";
     save(state);
   }
 
@@ -1257,7 +1251,7 @@
     }
   }
 
-  function stabilizeOverlapNoBounce(state, p, e){
+  function stabilizeOverlapNoBounce(p, e){
     const dx = (p.x - e.x);
     const overlapX = (p.w/2 + e.w/2) - Math.abs(dx);
     if (overlapX <= 0) return false;
@@ -1353,7 +1347,7 @@
     ctx.fillText(`BOSS GATE | STAGE ${stageLabel(state.stageIndex)} ${state.inBossRoom ? "(BOSS)" : ""} | KILL ${state.killed}/${state.goalKills}`, 350, 38);
     ctx.fillText(`HP ${Math.floor(p.hp)}/${d.hpMax}  ATK ${d.atk} DEF ${d.def} CRIT ${d.crit}%  SPD ${d.spd}  LS ${d.ls}%`, 350, 56);
     ctx.fillText(`GOLD ${p.gold}G | 포션 ${p.potions}/${POTION_MAX} (H/🧪) | 접촉쿨 ${p.hitCd.toFixed(2)}s`, 350, 74);
-    ctx.fillText(`⚙:메뉴  🎒/I:인벤  Z:공격  X:스킬  Space:점프  H:포션`, 350, 92);
+    ctx.fillText(`⚙:메뉴  🎒/I:인벤  🏪/B:상점  Z:공격  X:스킬  Space:점프  H:포션`, 350, 92);
 
     const hotGear = (pointer.x>=HUD_MENU_BTN.x && pointer.x<=HUD_MENU_BTN.x+HUD_MENU_BTN.w &&
                      pointer.y>=HUD_MENU_BTN.y && pointer.y<=HUD_MENU_BTN.y+HUD_MENU_BTN.h);
@@ -1442,7 +1436,7 @@
 
     btn(bx, by, bw, bh, "새 게임 시작", true);
     btn(bx, by+64, bw, bh, hasSave ? "이어하기" : "이어하기(저장 없음)", hasSave);
-    btn(bx, by+128, bw, bh, "옵션");
+    btn(bx, by+128, bw, bh, "옵션", false);
     btn(bx, by+192, bw, bh, "저장 삭제", false);
 
     if (hitBtn(bx,by,bw,bh)) startNew(state);
@@ -1454,12 +1448,11 @@
         Object.assign(state, restored);
         applyOptions(state);
         state.gs = "PLAY";
+        save(state);
       }
     }
 
-    // ✅ 메뉴에서 옵션 열면, 옵션 나가면 메뉴로 복귀
-    if (hitBtn(bx,by+128,bw,bh)) openOptions(state, "MENU");
-
+    if (hitBtn(bx,by+128,bw,bh)) { state._optBack = "MENU"; state.gs = "OPTIONS"; }
     if (hitBtn(bx,by+192,bw,bh)) {
       localStorage.removeItem(SAVE_KEY);
       state.msg = "저장 삭제 완료.";
@@ -1468,16 +1461,7 @@
 
     ctx.fillStyle = "rgba(235,240,255,0.55)";
     ctx.font = "12px ui-monospace, Menlo, Consolas";
-    ctx.fillText("모바일: 버튼/⚙ 메뉴 / PC: 방향키 + Z/X + Space + H + I", VIEW_W*0.5-240, VIEW_H*0.5+210);
-  }
-
-  // ✅ 옵션 화면에서 “뒤로가기”를 원래 화면으로
-  function goBackFromOptions(state){
-    const to = state.optReturn || "MENU";
-    state.gs = to;
-    // 옵션이 PAUSE에서 열렸다면, 바로 PLAY로 가면 헷갈리니 PAUSE로 복귀(원하면 재개 누르게)
-    if (to === "PLAY") state.gs = "PAUSE";
-    save(state);
+    ctx.fillText("모바일: 버튼/⚙ 메뉴 / PC: 방향키 + Z/X + Space + H + I + B(상점)", VIEW_W*0.5-240, VIEW_H*0.5+210);
   }
 
   function drawOptions(state){
@@ -1489,22 +1473,19 @@
     btn(bx, by, bw, bh, `음소거: ${state.opt.muted ? "ON" : "OFF"}`, !state.opt.muted);
     btn(bx, by+64, bw, bh, `BGM: ${state.opt.bgm ? "ON" : "OFF"}`, state.opt.bgm);
     btn(bx, by+128, bw, bh, `SFX: ${state.opt.sfx ? "ON" : "OFF"}`, state.opt.sfx);
-    btn(bx, by+212, bw, bh, "뒤로가기(ESC/P/⚙)", true);
+    btn(bx, by+212, bw, bh, "뒤로가기(ESC/⚙)", true);
 
     if (hitBtn(bx,by,bw,bh)) { state.opt.muted = !state.opt.muted; applyOptions(state); save(state); }
     if (hitBtn(bx,by+64,bw,bh)) { state.opt.bgm = !state.opt.bgm; applyOptions(state); save(state); }
     if (hitBtn(bx,by+128,bw,bh)) { state.opt.sfx = !state.opt.sfx; applyOptions(state); save(state); }
-    if (hitBtn(bx,by+212,bw,bh)) { goBackFromOptions(state); }
+    if (hitBtn(bx,by+212,bw,bh)) { state.gs = state._optBack || "MENU"; save(state); }
 
     ctx.fillStyle = "rgba(235,240,255,0.65)";
     ctx.font = "13px system-ui, -apple-system, Segoe UI";
     ctx.fillText("오디오가 안 나면 화면을 한 번 탭/클릭해서 언락해줘.", VIEW_W*0.5-200, VIEW_H*0.5+70);
 
-    // ✅ ESC/P/⚙ (pressed.menu)로도 옵션 빠져나가기 지원
-    if (pressed.menu) {
-      pressed.menu = false;
-      goBackFromOptions(state);
-    }
+    // ✅ ESC/⚙로도 탈출
+    if (pressed.menu) { pressed.menu = false; state.gs = state._optBack || "MENU"; save(state); }
   }
 
   function drawScene(state, dim=false){
@@ -1575,8 +1556,8 @@
     const items = [
       { t:"재개", hot:true, fn:()=> state.gs="PLAY" },
       { t:"인벤토리(🎒)", hot:false, fn:()=> state.gs="INV" },
-      // ✅ PAUSE에서 옵션 열면 돌아올 곳은 PAUSE
-      { t:"옵션", hot:false, fn:()=> openOptions(state, "PAUSE") },
+      { t:"상점(🏪) - 물약/판매/감정", hot:false, fn:()=> { state._shopBack="PAUSE"; state.gs="SHOP"; } },
+      { t:"옵션", hot:false, fn:()=> { state._optBack="PAUSE"; state.gs="OPTIONS"; } },
       { t:"저장 후 타이틀로", hot:false, fn:()=> { save(state); state.gs="MENU"; state.msg="저장 완료. 타이틀로 이동."; state.msgT=1.5; } },
       { t:"게임 종료(완전 탈출)", hot:true, fn:()=> { hardExitNow(); state.gs="EXIT"; } },
     ];
@@ -1587,8 +1568,9 @@
       if (hitBtn(bx, y, bw, bh)) items[i].fn();
     }
 
-    if (pressed.menu) { pressed.menu = false; state.gs = "PLAY"; }
-    if (pressed.inv) { pressed.inv = false; state.gs = "INV"; }
+    if (pressed.menu) { pressed.menu = false; state.gs = "PLAY"; save(state); }
+    if (pressed.inv)  { pressed.inv  = false; state.gs = "INV";  save(state); }
+    if (pressed.shop) { pressed.shop = false; state._shopBack="PAUSE"; state.gs="SHOP"; save(state); }
   }
 
   function drawExitScreen(){
@@ -1604,7 +1586,7 @@
     ctx.textAlign = "left";
   }
 
-  // -------------------- INVENTORY (원본 유지) --------------------
+  // -------------------- INVENTORY --------------------
   function rarColor(r){
     if (r==="SSR") return ["rgba(255,207,91,0.22)","rgba(255,207,91,0.55)"];
     if (r==="SR")  return ["rgba(174,120,255,0.22)","rgba(174,120,255,0.55)"];
@@ -1870,6 +1852,143 @@
       state.gs = "PLAY";
       save(state);
     }
+    // ✅ B로 상점도 바로 가능
+    if (pressed.shop) {
+      pressed.shop = false;
+      state._shopBack = "INV";
+      state.gs = "SHOP";
+      save(state);
+    }
+  }
+
+  // -------------------- SHOP --------------------
+  function potionBuyPrice(state){
+    return 35 + state.stageIndex * 6; // 원하는 값으로 조절 가능
+  }
+
+  function drawShop(state){
+    drawScene(state, true);
+
+    const p = state.player;
+
+    const px = VIEW_W*0.5-260;
+    const py = 70;
+    const pw = 520;
+    const ph = 400;
+
+    panel(px, py, pw, ph, "상점 / 감정");
+
+    ctx.fillStyle = "rgba(235,240,255,0.80)";
+    ctx.font = "13px ui-monospace, Menlo, Consolas";
+    ctx.fillText(`GOLD: ${p.gold}G`, px+20, py+56);
+    ctx.fillText(`포션: ${p.potions}/${POTION_MAX}`, px+20, py+76);
+
+    const price = potionBuyPrice(state);
+
+    const bx = px+20, bw = pw-40, bh = 46, gap = 10;
+    let y = py+90;
+
+    btn(bx, y, bw, bh, `포션 1개 구매 (+1)  -${price}G`, true);
+    if (hitBtn(bx,y,bw,bh)) {
+      if (p.potions >= POTION_MAX) {
+        state.msg = "포션이 이미 가득하다.";
+        state.msgT = 1.0;
+      } else if (p.gold < price) {
+        state.msg = "골드가 부족하다!";
+        state.msgT = 1.0;
+      } else {
+        p.gold -= price;
+        p.potions += 1;
+        audio.playCoin();
+        state.msg = "포션 구매 완료!";
+        state.msgT = 1.0;
+        save(state);
+      }
+    }
+    y += bh + gap;
+
+    const canBuyMax = Math.max(0, POTION_MAX - p.potions);
+    const maxCost = canBuyMax * price;
+
+    btn(bx, y, bw, bh, `포션 최대로 구매 (+${canBuyMax})  -${maxCost}G`, false);
+    if (hitBtn(bx,y,bw,bh)) {
+      if (canBuyMax <= 0) {
+        state.msg = "포션이 이미 가득하다.";
+        state.msgT = 1.0;
+      } else {
+        const affordable = Math.min(canBuyMax, Math.floor(p.gold / price));
+        if (affordable <= 0) {
+          state.msg = "골드가 부족하다!";
+          state.msgT = 1.0;
+        } else {
+          p.gold -= affordable * price;
+          p.potions += affordable;
+          audio.playCoin();
+          state.msg = `포션 ${affordable}개 구매!`;
+          state.msgT = 1.2;
+          save(state);
+        }
+      }
+    }
+    y += bh + gap;
+
+    btn(bx, y, bw, bh, "일반템(N) 일괄판매", false);
+    if (hitBtn(bx,y,bw,bh)) {
+      let gain=0, sold=0;
+      const keep=[];
+      for(const it of p.invItems){
+        if(it.rar==="N"){ gain += sellPrice(it); sold++; }
+        else keep.push(it);
+      }
+      p.invItems = keep;
+      p.gold += gain;
+      if (sold>0) audio.playCoin();
+      state.msg = sold>0 ? `일반템 ${sold}개 판매 (+${gain}G)` : "판매할 일반템이 없음";
+      state.msgT = 1.2;
+      save(state);
+    }
+    y += bh + gap;
+
+    btn(bx, y, bw, bh, "미감정 아이템 일괄 감정", true);
+    if (hitBtn(bx,y,bw,bh)) {
+      let cnt=0, total=0;
+      for(const it of p.invItems){
+        if(!it.identified){
+          total += Math.max(20, Math.floor(sellPrice(it)*0.35));
+        }
+      }
+      if (total <= 0) {
+        state.msg = "감정할 미감정 아이템이 없다.";
+        state.msgT = 1.2;
+      } else if (p.gold < total) {
+        state.msg = `골드가 부족하다! (필요 ${total}G)`;
+        state.msgT = 1.2;
+      } else {
+        p.gold -= total;
+        for(const it of p.invItems){
+          if(!it.identified){
+            appraise(it);
+            cnt++;
+          }
+        }
+        audio.playCoin();
+        state.msg = `일괄 감정 완료! (${cnt}개, -${total}G)`;
+        state.msgT = 1.4;
+        save(state);
+      }
+    }
+    y += bh + gap;
+
+    btn(bx, y, bw, bh, "뒤로가기(ESC/⚙)", true);
+    if (hitBtn(bx,y,bw,bh)) { state.gs = state._shopBack || "PAUSE"; save(state); }
+
+    if (pressed.menu || pressed.shop || pressed.inv) {
+      pressed.menu = false;
+      pressed.shop = false;
+      pressed.inv = false;
+      state.gs = state._shopBack || "PAUSE";
+      save(state);
+    }
   }
 
   function updatePlay(state, dt){
@@ -1881,6 +2000,7 @@
 
     p.inv = Math.max(0, p.inv - dt);
     p.hitCd = Math.max(0, p.hitCd - dt);
+
     p.attackLock = Math.max(0, p.attackLock - dt);
 
     p.potionCd = Math.max(0, p.potionCd - dt);
@@ -1921,7 +2041,7 @@
     if (doAtk && p.atkCd <= 0) {
       p.atkCd = 0.30;
       p.anim = "attack"; p.animT = 0;
-      p.attackLock = Math.max(p.attackLock, 0.18);
+      p.attackLock = Math.max(p.attackLock, ATTACK_LOCK_ATK);
 
       const hx = p.x + p.face * 46;
       const hy = p.y - 10;
@@ -1963,7 +2083,7 @@
       p.skillCd = 2.8;
       p.atkCd = 0.42;
       p.anim = "attack"; p.animT = 0;
-      p.attackLock = Math.max(p.attackLock, 0.24);
+      p.attackLock = Math.max(p.attackLock, ATTACK_LOCK_SKL);
 
       const hx = p.x + p.face * 78;
       const hy = p.y - 12;
@@ -2026,14 +2146,14 @@
         e.x - e.w/2, e.y - e.h/2, e.w, e.h
       );
 
-      if (overlapped) stabilizeOverlapNoBounce(state, p, e);
+      if (overlapped) stabilizeOverlapNoBounce(p, e);
 
       if (overlapped && p.inv <= 0 && p.hitCd <= 0) {
         const { dmg } = damageCalc(e.atk, d.def, 0, 1);
 
         p.hp = clamp(p.hp - dmg, 0, d.hpMax);
         p.inv = 0.55;
-        p.hitCd = 0.22;
+        p.hitCd = CONTACT_DAMAGE_COOLDOWN;
         p.noHitT = 0;
 
         audio.playHit();
@@ -2141,14 +2261,13 @@
 
     if (pressed.menu) { pressed.menu = false; state.gs = "PAUSE"; save(state); return; }
     if (pressed.inv)  { pressed.inv  = false; state.gs = "INV";   save(state); return; }
+    if (pressed.shop) { pressed.shop = false; state._shopBack="PLAY"; state.gs = "SHOP"; save(state); return; }
   }
 
   function revive(raw){
     const st = freshState();
     st.gs = raw.gs || "MENU";
     st.opt = raw.opt || st.opt;
-
-    st.optReturn = raw.optReturn || "MENU";
 
     st.player = new Player();
     Object.assign(st.player, raw.player || {});
@@ -2177,6 +2296,9 @@
     st.invSelId = raw.invSelId ?? null;
     st.invScroll = raw.invScroll ?? 0;
 
+    st._optBack = raw._optBack ?? "MENU";
+    st._shopBack = raw._shopBack ?? "PAUSE";
+
     st.t = 0;
     st.camX = raw.camX ?? 0;
     return st;
@@ -2188,13 +2310,13 @@
 
   let last = performance.now();
   function loop(t){
+    // ✅ 상태별 모바일 버튼 표시
+    syncTouchVisibility(state.gs);
+
     const dt = Math.min(0.033, (t - last)/1000);
     last = t;
 
     state.t += dt;
-
-    // ✅ 상태에 따라 터치 버튼 표시/숨김 (메뉴/옵션/인벤 아래가 가려지는 문제 해결)
-    setTouchVisible(state.gs === "PLAY");
 
     if (state.gs === "PLAY") updatePlay(state, dt);
 
@@ -2207,6 +2329,7 @@
     else if (state.gs === "OPTIONS") drawOptions(state);
     else if (state.gs === "PAUSE") drawPause(state);
     else if (state.gs === "INV") drawInventory(state);
+    else if (state.gs === "SHOP") drawShop(state);
     else if (state.gs === "EXIT") drawExitScreen();
     else drawScene(state);
 
