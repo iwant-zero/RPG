@@ -30,34 +30,132 @@
     }
     canvas#game { width: 100%; height: 100%; display: block; background: #050812; }
 
-    #touch { position: absolute; inset: 0; pointer-events: none; }
-    .btn {
-      pointer-events: auto;
-      position: absolute;
-      width: 62px; height: 62px;
-      border-radius: 16px;
-      display: grid; place-items: center;
-      background: rgba(255,255,255,0.08);
-      border: 1px solid rgba(255,255,255,0.14);
-      color: rgba(235,240,255,0.92);
-      font-weight: 900; font-size: 18px;
-      -webkit-tap-highlight-color: transparent;
-      user-select: none;
-      touch-action: none;
-    }
-    .btn:active {
-      transform: translateY(1px);
-      background: rgba(91,140,255,0.20);
-      border-color: rgba(91,140,255,0.55);
-    }
-    #b-left { left: 16px; bottom: 22px; }
-    #b-right { left: 92px; bottom: 22px; }
+  /* ===== 모바일 터치 버튼: 화면 크기에 맞춰 자동 축소 ===== */
+:root{
+  color-scheme: dark;
 
-    #b-jump { right: 16px; bottom: 96px; width: 70px; height: 70px; border-radius: 18px; font-size: 18px; }
-    #b-atk { right: 96px; bottom: 22px; }
-    #b-skill { right: 16px; bottom: 22px; }
-    #b-potion { right: 96px; bottom: 96px; width: 70px; height: 70px; border-radius: 18px; font-size: 18px; }
-    #b-menu { right: 16px; top: 16px; width: 54px; height: 54px; border-radius: 14px; font-size: 18px; }
+  /* 버튼/간격을 화면 폭에 맞춰 자동 조절 */
+  --pad: clamp(8px, 2.2vw, 16px);
+  --gap: clamp(6px, 1.8vw, 14px);
+  --btn: clamp(38px, 9.5vw, 56px);
+  --btnBig: clamp(46px, 12vw, 64px);
+
+  --rad:  calc(var(--btn) * 0.26);
+  --radB: calc(var(--btnBig) * 0.26);
+
+  --fs:  clamp(12px, 3.8vw, 18px);
+  --fsB: clamp(13px, 4.2vw, 18px);
+}
+
+/* 기존 body/html 등은 그대로 두고, 아래만 교체 */
+#touch{
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+/* 기본 버튼 스타일 */
+.btn{
+  pointer-events: auto;
+  position: absolute;
+
+  width: var(--btn);
+  height: var(--btn);
+  border-radius: var(--rad);
+
+  display: grid;
+  place-items: center;
+
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.14);
+  color: rgba(235,240,255,0.92);
+
+  font-weight: 900;
+  font-size: var(--fs);
+
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  touch-action: none;
+
+  /* 화면을 덜 가리게 살짝 투명 */
+  opacity: 0.88;
+  backdrop-filter: blur(2px);
+}
+
+.btn:active{
+  transform: translateY(1px);
+  background: rgba(91,140,255,0.20);
+  border-color: rgba(91,140,255,0.55);
+  opacity: 1;
+}
+
+/* ===== safe-area (아이폰 노치/하단바) 보정 ===== */
+#b-left{
+  left:  calc(var(--pad) + env(safe-area-inset-left));
+  bottom: calc(var(--pad) + env(safe-area-inset-bottom));
+}
+#b-right{
+  left:  calc(var(--pad) + env(safe-area-inset-left) + var(--btn) + var(--gap));
+  bottom: calc(var(--pad) + env(safe-area-inset-bottom));
+}
+
+/* 오른쪽 군(공격/스킬/점프/포션) */
+#b-atk{
+  right:  calc(var(--pad) + env(safe-area-inset-right) + var(--btn) + var(--gap));
+  bottom: calc(var(--pad) + env(safe-area-inset-bottom));
+}
+#b-skill{
+  right:  calc(var(--pad) + env(safe-area-inset-right));
+  bottom: calc(var(--pad) + env(safe-area-inset-bottom));
+}
+
+/* 큰 버튼(점프/포션) */
+#b-jump{
+  width: var(--btnBig);
+  height: var(--btnBig);
+  border-radius: var(--radB);
+  font-size: var(--fsB);
+
+  right:  calc(var(--pad) + env(safe-area-inset-right));
+  bottom: calc(var(--pad) + env(safe-area-inset-bottom) + var(--btn) + var(--gap));
+}
+#b-potion{
+  width: var(--btnBig);
+  height: var(--btnBig);
+  border-radius: var(--radB);
+  font-size: var(--fsB);
+
+  right:  calc(var(--pad) + env(safe-area-inset-right) + var(--btn) + var(--gap));
+  bottom: calc(var(--pad) + env(safe-area-inset-bottom) + var(--btn) + var(--gap));
+}
+
+/* 메뉴 버튼(우상단) */
+#b-menu{
+  width: clamp(34px, 8vw, 52px);
+  height: clamp(34px, 8vw, 52px);
+  border-radius: clamp(10px, 2.6vw, 14px);
+  font-size: clamp(14px, 4vw, 18px);
+
+  right: calc(var(--pad) + env(safe-area-inset-right));
+  top:   calc(var(--pad) + env(safe-area-inset-top));
+}
+
+/* ===== PC(마우스/키보드)에서는 터치버튼 숨김 ===== */
+@media (hover: hover) and (pointer: fine){
+  #touch{ display:none; }
+}
+
+/* ===== 아주 작은 화면(초소형)에서는 더 줄이기 ===== */
+@media (max-width: 420px){
+  :root{
+    --btn: clamp(34px, 9vw, 46px);
+    --btnBig: clamp(40px, 11vw, 54px);
+    --fs:  clamp(11px, 3.6vw, 16px);
+    --fsB: clamp(12px, 3.8vw, 16px);
+  }
+  .btn{ opacity: 0.82; }
+}
+
   </style>
 </head>
 
