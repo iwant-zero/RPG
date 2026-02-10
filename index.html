@@ -1,5 +1,4 @@
-# Write the updated complete index.html to a file for download
-content = r"""<!doctype html>
+<!doctype html>
 <html lang="ko">
 <head>
   <meta charset="utf-8" />
@@ -106,28 +105,37 @@ content = r"""<!doctype html>
   // -------------------- Save/Load (수동 저장 전용) --------------------
   const SAVE_KEY = "boss_gate_web_v12_full_fixed"; // 유지(세이브 호환)
 
+  function makeSavePayload(state,gsOverride){
+    const p = state.player;
+    return {
+      ver: state.ver||12,
+      createdAt: state.createdAt||isoNow(),
+      updatedAt: isoNow(),
+      gs: gsOverride || state.gs || "PLAY",
+      opt: state.opt || { muted:false, bgm:true, sfx:true },
+      stageIndex: state.stageIndex||1,
+      inBossRoom: !!state.inBossRoom,
+      killed: state.killed||0,
+      goalKills: state.goalKills||10,
+      player: {
+        hp:p.hp,
+        hpBase:p.hpBase, atkBase:p.atkBase, defBase:p.defBase, critBase:p.critBase, spdBase:p.spdBase,
+        potions:p.potions, gold:p.gold, stage:p.stage||1, kills:p.kills||0,
+        appraiseTickets:p.appraiseTickets||0,
+        invItems:p.invItems||[],
+        equip:p.equip||{weapon:null,chest:null,helm:null,gloves:null,boots:null,ring:null},
+      }
+    };
+  }
+
+  // 세션 저장(로컬스토리지 X): "타이틀로" 갔다가 "재개" 버튼을 살리기 위함
+  function sessionSave(state){
+    state.sessionSave = makeSavePayload(state, "PLAY");
+  }
+
   function saveGame(state){
     try{
-      const p = state.player;
-      const payload = {
-        ver: state.ver||12,
-        createdAt: state.createdAt||isoNow(),
-        updatedAt: isoNow(),
-        gs: "PLAY",
-        opt: state.opt || { muted:false, bgm:true, sfx:true },
-        stageIndex: state.stageIndex||1,
-        inBossRoom: !!state.inBossRoom,
-        killed: state.killed||0,
-        goalKills: state.goalKills||10,
-        player: {
-          hp:p.hp,
-          hpBase:p.hpBase, atkBase:p.atkBase, defBase:p.defBase, critBase:p.critBase, spdBase:p.spdBase,
-          potions:p.potions, gold:p.gold, stage:p.stage||1, kills:p.kills||0,
-          appraiseTickets:p.appraiseTickets||0,
-          invItems:p.invItems||[],
-          equip:p.equip||{weapon:null,chest:null,helm:null,gloves:null,boots:null,ring:null},
-        }
-      };
+      const payload = makeSavePayload(state, "PLAY");
       localStorage.setItem(SAVE_KEY, JSON.stringify(payload));
       state.msg="저장 완료."; state.msgT=1.4;
       state._dirty=false;
@@ -544,6 +552,28 @@ content = r"""<!doctype html>
     dead(){ return this.t>=this.life; }
   }
 
+  // ✅ FX/텍스트 잔상 정리(안 지워져서 화면이 지저분해지는 문제 해결)
+  function updateEffects(dt,state){
+    // HitSpark
+    for(let i=state.fx.length-1;i>=0;i--){
+      const f=state.fx[i];
+      f.update(dt);
+      if(f.dead()) state.fx.splice(i,1);
+    }
+    // DamageText
+    for(let i=state.dmgText.length-1;i>=0;i--){
+      const t=state.dmgText[i];
+      t.update(dt);
+      if(t.dead()) state.dmgText.splice(i,1);
+    }
+    // Particles
+    for(let i=state.parts.length-1;i>=0;i--){
+      const p=state.parts[i];
+      p.update(dt);
+      if(p.dead()) state.parts.splice(i,1);
+    }
+  }
+
   // -------------------- World --------------------
   const WORLD={ w:4200, h:1200 };
   const GROUND_Y=860;
@@ -717,6 +747,9 @@ content = r"""<!doctype html>
   const DROP_RATE_BOSS=0.70;
   const BOSS_DOUBLE_DROP_RATE=0.22;
 
+  // ✅ 속도 단위를 px/s로 통일(가장 중요한 수정)
+  // 이동/충돌에서 x += vx*dt, y += vy*dt 로 변경
+
   class Player{
     constructor(){
       this.x=220; this.y=200;
@@ -852,14 +885,15 @@ content = r"""<!doctype html>
       this.bias = rand(-0.12, 0.12);
       this.keepDist = (tier==="boss") ? 90 : (tier==="elite" ? 78 : 72);
 
-      // ✅ 어그로/리시(원위치) 시스템: "가만히 서서 칼질" 방지 핵심
+      // ✅ 어그로/리시(원위치) 시스템
+      //    - 몬스터가 맵 끝에서부터 전부 달려오는 문제 방지
+      //    - 플레이어가 앞으로 전진하면서 하나씩 사냥하도록 유도
+      //    - "몬스터 인식 범위를 2배"로 늘리고 싶으면 아래 aggroRange 값을 2배로.
       this.aggro = (tier === "boss"); // 보스는 항상 어그로
       this.spawnX = x;                // 원래 위치(리시 기준)
-      this.leashDist = (tier === "boss") ? 9999 : (tier === "elite" ? 420 : 360);
-      this.aggroRange = (tier === "boss") ? 9999 : (tier === "elite" ? 210 : 180);
-
-      // 교대 전투용(프레임마다 계산)
-      this.engageRank = 999;
+      this.leashDist = (tier === "boss") ? 9999 : (tier === "elite" ? 280 : 240);
+      this.aggroRange = (tier === "boss") ? 260 : (tier === "elite" ? 220 : 200);
+      this.engageRank = 999;          // 0이 가장 적극적(플레이어 근접/전투)
     }
   }
 
@@ -975,6 +1009,10 @@ content = r"""<!doctype html>
       shopScroll:0,
       _dirty:false,
       returnGs:"PAUSE",
+      // ✅ 타이틀로 나갔을 때 "재개"를 보여주기 위한 세션 플래그
+      sessionActive:false,
+      // (옵션) 세션 스냅샷(현재는 메뉴 복귀 시 state 자체를 유지하므로 필수는 아님)
+      sessionSave:null,
     };
   }
 
@@ -1033,6 +1071,7 @@ content = r"""<!doctype html>
     const fresh=freshState();
     fresh.opt=opt;
     Object.assign(state,fresh);
+    state.sessionActive=false;
     rebuildStage(state);
     state.gs="PLAY";
     state._dirty=true;
@@ -1194,22 +1233,11 @@ content = r"""<!doctype html>
           const dir=(dx===0)?(Math.random()<0.5?-1:1):Math.sign(dx);
           a.x -= dir*push;
           b.x += dir*push;
+          // 약간 속도도 서로 깎음
           a.vx *= 0.85;
           b.vx *= 0.85;
         }
       }
-    }
-  }
-
-  // ✅ 교대 전투 계산: "어그로된 몬스터" 중 가까운 순으로 rank 부여
-  function computeEngageRanks(state){
-    const p=state.player;
-    const liveAggro = state.enemies.filter(e => !e.dead && e.aggro);
-    for(const e of state.enemies) e.engageRank = 999;
-
-    liveAggro.sort((a,b)=>Math.abs(a.x-p.x)-Math.abs(b.x-p.x));
-    for(let i=0;i<liveAggro.length;i++){
-      liveAggro[i].engageRank = i;
     }
   }
 
@@ -1405,44 +1433,53 @@ content = r"""<!doctype html>
   // -------------------- MENU / OPTIONS / PAUSE --------------------
   function drawMenu(state){
     drawBackground();
-    const px=VIEW_W*0.5-260, py=VIEW_H*0.5-190;
-    panel(px,py,520,380,"보스게이트");
+    const px=VIEW_W*0.5-260, py=VIEW_H*0.5-210;
+    panel(px,py,520,420,"보스게이트");
 
     ctx.fillStyle="rgba(235,240,255,0.75)";
     ctx.font="14px system-ui, -apple-system, Segoe UI";
     ctx.textAlign="center";
-    ctx.fillText("스테이지를 뚫고, 보스문을 부숴라.",VIEW_W*0.5,VIEW_H*0.5-110);
+    ctx.fillText("스테이지를 뚫고, 보스문을 부숴라.",VIEW_W*0.5,VIEW_H*0.5-120);
     ctx.textAlign="left";
 
-    const bx=VIEW_W*0.5-180, by=VIEW_H*0.5-70, bw=360, bh=52;
+    const bx=VIEW_W*0.5-180, by=VIEW_H*0.5-88, bw=360, bh=52;
     const hasSave=!!load();
+    const canResume=!!state.sessionActive;
 
     btn(bx,by,bw,bh,"새 게임 시작",true);
-    btn(bx,by+64,bw,bh,hasSave?"이어하기":"이어하기(저장 없음)",hasSave);
-    btn(bx,by+128,bw,bh,"옵션");
-    btn(bx,by+192,bw,bh,"저장 삭제",false);
+    btn(bx,by+64,bw,bh,canResume?"재개(이번 세션)":"재개(세션 없음)",canResume);
+    btn(bx,by+128,bw,bh,hasSave?"이어하기(저장)":"이어하기(저장 없음)",hasSave);
+    btn(bx,by+192,bw,bh,"옵션");
+    btn(bx,by+256,bw,bh,"저장 삭제",false);
 
     if(hitBtn(bx,by,bw,bh)) startNew(state);
 
-    if(hasSave && hitBtn(bx,by+64,bw,bh)){
+    // ✅ "타이틀로" 갔다 와도 세션 재개 가능
+    if(canResume && hitBtn(bx,by+64,bw,bh)){
+      state.gs="PLAY";
+    }
+
+    if(hasSave && hitBtn(bx,by+128,bw,bh)){
       const s=load();
       if(s){
         const restored=revive(s);
         Object.assign(state,restored);
+        state.sessionActive=false; // 저장 이어하기는 세션 플래그 리셋
         applyOptions(state);
         state.gs="PLAY";
       }
     }
-    if(hitBtn(bx,by+128,bw,bh)){ state.optionsReturn="MENU"; state.gs="OPTIONS"; }
 
-    if(hitBtn(bx,by+192,bw,bh)){
+    if(hitBtn(bx,by+192,bw,bh)){ state.optionsReturn="MENU"; state.gs="OPTIONS"; }
+
+    if(hitBtn(bx,by+256,bw,bh)){
       localStorage.removeItem(SAVE_KEY);
       state.msg="저장 삭제 완료."; state.msgT=1.5;
     }
 
     ctx.fillStyle="rgba(235,240,255,0.55)";
     ctx.font="12px ui-monospace, Menlo, Consolas";
-    ctx.fillText("모바일: 터치 버튼 / PC: 방향키+Z/X+Space+H+I+ESC",VIEW_W*0.5-240,VIEW_H*0.5+210);
+    ctx.fillText("모바일: 터치 버튼 / PC: 방향키+Z/X+Space+H+I+ESC",VIEW_W*0.5-240,VIEW_H*0.5+230);
   }
 
   function drawOptions(state){
@@ -1480,7 +1517,13 @@ content = r"""<!doctype html>
       {t:"상점/감정(🏪)",hot:false, fn:()=>{state.returnGs="PAUSE"; state.gs="SHOP";}},
       {t:"옵션",hot:false, fn:()=>{state.optionsReturn="PAUSE"; state.gs="OPTIONS";}},
       {t:`저장(수동) ${state._dirty?"":"(최신)"}`,hot:false, fn:()=>saveGame(state)},
-      {t:"타이틀로",hot:false, fn:()=>{state.gs="MENU"; state.msg="타이틀로 이동."; state.msgT=1.3;}},
+      {t:"타이틀로",hot:false, fn:()=>{
+        // ✅ 세션은 유지한 채 타이틀 화면만 보여줌(메뉴에서 "재개" 가능)
+        state.sessionActive=true;
+        state.gs="MENU";
+        state.msg="타이틀로 이동(재개 가능).";
+        state.msgT=1.3;
+      }},
     ];
 
     for(let i=0;i<items.length;i++){
@@ -1833,7 +1876,19 @@ content = r"""<!doctype html>
     }
   }
 
-  // ✅ 어그로 전에는 정지 + "한 마리씩" 교대 접근
+  // ✅ 동시에 달라붙는 수를 제한(가만히 있어도 몬스터가 우르르 오는 느낌 완화)
+  const MAX_ENGAGE = 1;
+
+  function computeEngageRanks(state){
+    const p=state.player;
+    const live = state.enemies.filter(e=>!e.dead);
+    // 거리 순 정렬
+    live.sort((a,b)=>Math.abs((a.x-p.x)) - Math.abs((b.x-p.x)));
+    for(let i=0;i<live.length;i++){
+      live[i].engageRank = i;
+    }
+  }
+
   function updateEnemyAI(dt,state,e){
     if(e.dead) return;
 
@@ -1843,61 +1898,68 @@ content = r"""<!doctype html>
 
     const p=state.player;
     const dx=p.x-e.x;
-    const dist=Math.abs(dx);
     const dir = dx===0 ? 0 : Math.sign(dx);
-    if(dir!==0) e.face = dir;
+    e.face = dir===0 ? e.face : dir;
 
-    // 어그로 조건(가까이 오면 활성)
-    if(!e.aggro){
-      if(dist <= e.aggroRange) e.aggro = true;
+    // ✅ 어그로 진입: 일정 범위 안으로 들어오면 추적 시작
+    const dist = Math.abs(dx);
+    if(!e.aggro && dist <= e.aggroRange){
+      e.aggro = true;
     }
 
-    // 리시(원위치 너무 멀면 해제)
-    if(e.aggro && Math.abs(e.x - e.spawnX) > e.leashDist){
-      e.aggro = false;
+    // ✅ 리시: 원래 위치에서 너무 멀어지면 어그로 해제하고 복귀(보스 제외)
+    if(e.tier!=="boss" && e.aggro){
+      const away = Math.abs(e.x - e.spawnX);
+      if(away > e.leashDist){
+        e.aggro = false;
+      }
     }
 
-    // ✅ 어그로 아니면 완전 정지(가만히 서서 칼질 방지의 핵심)
+    // ✅ 비-어그로 상태: 제자리 근처에서만 약간 움직이거나 대기
     if(!e.aggro){
-      e.vx = lerp(e.vx, 0, clamp(12*dt,0,1));
-      e.anim = "idle";
+      // 스폰 위치로 자연 복귀
+      const back = e.spawnX - e.x;
+      const want = (Math.abs(back) > 16) ? Math.sign(back) : 0;
+      const targetV = want * (e.spd*0.35);
+      const acc = 10;
+      e.vx = lerp(e.vx, targetV, clamp(acc*dt,0,1));
+
+      // 애니메이션
+      if(Math.abs(e.vx)>18) e.anim="run";
+      else e.anim="idle";
       return;
     }
 
-    // 교대 전투(어그로된 몬스터 중 1마리만 적극적으로 접근)
-    const MAX_ENGAGE = 1;
-    const rank = (e.engageRank ?? 999);
-    const engaged = (rank < MAX_ENGAGE);
+    // ✅ 동시에 달라붙는 수 제한: 멀티는 접근을 덜 적극적으로
+    const engaged = (e.engageRank < MAX_ENGAGE);
 
-    const stopDist = e.keepDist;
-    const desiredDist = engaged ? stopDist : (stopDist + 120);
+    // ✅ 너무 멀면 추적, 너무 가까우면 멈춤(개별 keepDist)
+    const stopDist = e.keepDist + e.bias*40;
+    const want = engaged
+      ? ((dist > stopDist) ? dir : 0)
+      : ((dist > stopDist*1.6) ? dir*0.6 : 0);
 
-    let want = 0;
-    if(engaged){
-      if(dist > desiredDist) want = dir;
-      else want = 0;
-    }else{
-      // engaged 아닌 애들은 원래 자리 유지(따라오지 않음)
-      const backDx = e.spawnX - e.x;
-      const backDir = backDx===0 ? 0 : Math.sign(backDx);
-      if(Math.abs(backDx) > 26) want = backDir * 0.6;
-      else want = 0;
-    }
-
-    const spdMul = engaged ? 1.0 : 0.25;
-    const targetV = want * e.spd * spdMul;
-
-    const acc = 10 + (e.tier==="boss"?6:0);
+    // ✅ dt 기반 가속/감속 (px/s)
+    const targetV = want * e.spd;
+    const acc = engaged ? (12 + (e.tier==="boss"?6:0)) : 6; // 비-주공은 반응 느리게
     e.vx = lerp(e.vx, targetV, clamp(acc*dt, 0, 1));
 
-    // 공격(engaged만)
-    if(engaged && dist < (stopDist + 12) && e.atkCd<=0 && e.attackLock<=0){
+    // 공격(접근 시) — engaged만 공격(동시 공격 체감 낮춤)
+    if(engaged && dist < (stopDist+10) && e.atkCd<=0 && e.attackLock<=0){
       e.anim="attack"; e.animT=0;
       e.attackLock=0.18;
       e.atkCd = (e.tier==="boss")?0.75:0.95;
+      // 공격할 땐 잠깐 속도 줄여서 “에스컬레이터” 느낌 제거
       e.vx *= 0.35;
     }
 
+    // 가끔 점프(추적 변주) — engaged만
+    if(engaged && e.onGround && dist > 300 && Math.random()<0.006){
+      e.vy = -360;
+      e.onGround=false;
+    }
+
+    // 애니메이션
     if(e.attackLock>0) e.anim="attack";
     else if(Math.abs(e.vx)>18) e.anim="run";
     else e.anim="idle";
@@ -1936,6 +1998,9 @@ content = r"""<!doctype html>
 
     state.t += dt;
     if(state.msgT>0) state.msgT -= dt;
+
+    // ✅ 데미지 숫자/파편/히트 이펙트가 계속 쌓이는 문제 해결
+    updateEffects(dt,state);
 
     p.atkCd = Math.max(0,p.atkCd-dt);
     p.skillCd = Math.max(0,p.skillCd-dt);
@@ -2006,7 +2071,7 @@ content = r"""<!doctype html>
       p.swingHitIds.clear();
     }
 
-    // ✅ 교대 전투 rank 계산(어그로된 애들만)
+    // ✅ engaged rank 계산
     computeEngageRanks(state);
 
     // 적 업데이트
@@ -2049,6 +2114,7 @@ content = r"""<!doctype html>
       // ✅ 플레이어 공격 판정(이번 스윙 타입으로 고정)
       const sw = swingActiveWindow(p);
       if(sw.active){
+        // 스윙당 1회만 맞도록
         if(p.swingHitIds.has(e.id)) continue;
 
         const range = sw.range;
@@ -2058,8 +2124,6 @@ content = r"""<!doctype html>
 
         if(hit && e.hitCd<=0){
           p.swingHitIds.add(e.id);
-
-          e.aggro = true; // ✅ 맞으면 그 몬스터는 즉시 어그로 ON
 
           e.hitCd = 0.14;
           e.anim="hurt"; e.animT=0;
@@ -2088,8 +2152,10 @@ content = r"""<!doctype html>
       }
     }
 
+    // ✅ 몬스터끼리 겹침 정리(“줄 서서 오는” 느낌 제거)
     separateEnemies(state);
 
+    // 코인/드랍 물리 + 줍기
     updateCoinsLoot(dt,state);
     collectNearby(state);
 
@@ -2146,9 +2212,3 @@ content = r"""<!doctype html>
 </script>
 </body>
 </html>
-"""
-path = "/mnt/data/index.html"
-with open(path, "w", encoding="utf-8") as f:
-    f.write(content)
-
-path
