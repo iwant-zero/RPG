@@ -1,4 +1,5 @@
-<!doctype html>
+# Write the updated complete index.html to a file for download
+content = r"""<!doctype html>
 <html lang="ko">
 <head>
   <meta charset="utf-8" />
@@ -716,9 +717,6 @@
   const DROP_RATE_BOSS=0.70;
   const BOSS_DOUBLE_DROP_RATE=0.22;
 
-  // ✅ 속도 단위를 px/s로 통일(가장 중요한 수정)
-  // 이동/충돌에서 x += vx*dt, y += vy*dt 로 변경
-
   class Player{
     constructor(){
       this.x=220; this.y=200;
@@ -854,7 +852,13 @@
       this.bias = rand(-0.12, 0.12);
       this.keepDist = (tier==="boss") ? 90 : (tier==="elite" ? 78 : 72);
 
-      // ✅ 교대 전투용 랭크(계산됨)
+      // ✅ 어그로/리시(원위치) 시스템: "가만히 서서 칼질" 방지 핵심
+      this.aggro = (tier === "boss"); // 보스는 항상 어그로
+      this.spawnX = x;                // 원래 위치(리시 기준)
+      this.leashDist = (tier === "boss") ? 9999 : (tier === "elite" ? 420 : 360);
+      this.aggroRange = (tier === "boss") ? 9999 : (tier === "elite" ? 210 : 180);
+
+      // 교대 전투용(프레임마다 계산)
       this.engageRank = 999;
     }
   }
@@ -1190,7 +1194,6 @@
           const dir=(dx===0)?(Math.random()<0.5?-1:1):Math.sign(dx);
           a.x -= dir*push;
           b.x += dir*push;
-          // 약간 속도도 서로 깎음
           a.vx *= 0.85;
           b.vx *= 0.85;
         }
@@ -1198,13 +1201,15 @@
     }
   }
 
-  // ✅ 동시에 달라붙는 몬스터 제한(교대 전투)
+  // ✅ 교대 전투 계산: "어그로된 몬스터" 중 가까운 순으로 rank 부여
   function computeEngageRanks(state){
-    const p = state.player;
-    const live = state.enemies.filter(e=>!e.dead);
-    live.sort((a,b)=>Math.abs(a.x-p.x)-Math.abs(b.x-p.x));
-    for(let i=0;i<live.length;i++){
-      live[i].engageRank = i; // 0이 가장 가까움
+    const p=state.player;
+    const liveAggro = state.enemies.filter(e => !e.dead && e.aggro);
+    for(const e of state.enemies) e.engageRank = 999;
+
+    liveAggro.sort((a,b)=>Math.abs(a.x-p.x)-Math.abs(b.x-p.x));
+    for(let i=0;i<liveAggro.length;i++){
+      liveAggro[i].engageRank = i;
     }
   }
 
@@ -1565,8 +1570,7 @@
     p.gold -= APPRAISE_PRICE;
     appraise(it);
     audio.playCoin();
-    state.msg=`감정 완료! (-${APPRAISE_PRICE}G)`;
-    state.msgT=1.4;
+    state.msg=`감정 완료! (-${APPRAISE_PRICE}G)`; state.msgT=1.4;
     markDirty(state);
     return true;
   }
@@ -1829,7 +1833,7 @@
     }
   }
 
-  // ✅ 교대 전투 + 후퇴/거리유지 AI (가만히 칼질 방지)
+  // ✅ 어그로 전에는 정지 + "한 마리씩" 교대 접근
   function updateEnemyAI(dt,state,e){
     if(e.dead) return;
 
@@ -1839,59 +1843,61 @@
 
     const p=state.player;
     const dx=p.x-e.x;
+    const dist=Math.abs(dx);
     const dir = dx===0 ? 0 : Math.sign(dx);
-    e.face = dir===0 ? e.face : dir;
+    if(dir!==0) e.face = dir;
 
-    // ✅ 교대 전투: 가까운 몬스터만 적극적으로 접근
-    const MAX_ENGAGE = 2; // 2~3 추천
+    // 어그로 조건(가까이 오면 활성)
+    if(!e.aggro){
+      if(dist <= e.aggroRange) e.aggro = true;
+    }
+
+    // 리시(원위치 너무 멀면 해제)
+    if(e.aggro && Math.abs(e.x - e.spawnX) > e.leashDist){
+      e.aggro = false;
+    }
+
+    // ✅ 어그로 아니면 완전 정지(가만히 서서 칼질 방지의 핵심)
+    if(!e.aggro){
+      e.vx = lerp(e.vx, 0, clamp(12*dt,0,1));
+      e.anim = "idle";
+      return;
+    }
+
+    // 교대 전투(어그로된 몬스터 중 1마리만 적극적으로 접근)
+    const MAX_ENGAGE = 1;
     const rank = (e.engageRank ?? 999);
     const engaged = (rank < MAX_ENGAGE);
 
-    // ✅ 거리 유지 로직
-    const baseStop = e.keepDist + e.bias*40;
-    const minDist  = baseStop * 0.72; // 너무 가까우면 "후퇴"
-    const stopDist = baseStop;
-
-    // engaged 아니면 더 멀리 떨어져있게 (우르르 방지)
-    const farBias = engaged ? 0 : (80 + Math.min(120, rank*10));
-    const desiredDist = stopDist + farBias;
+    const stopDist = e.keepDist;
+    const desiredDist = engaged ? stopDist : (stopDist + 120);
 
     let want = 0;
-
-    if(Math.abs(dx) < minDist){
-      // 너무 가까우면 뒤로 물러남
-      want = -dir;
-    }else if(Math.abs(dx) > desiredDist){
-      // 멀면 접근
-      want = dir;
+    if(engaged){
+      if(dist > desiredDist) want = dir;
+      else want = 0;
     }else{
-      // 적당 거리면 제자리
-      want = 0;
+      // engaged 아닌 애들은 원래 자리 유지(따라오지 않음)
+      const backDx = e.spawnX - e.x;
+      const backDir = backDx===0 ? 0 : Math.sign(backDx);
+      if(Math.abs(backDx) > 26) want = backDir * 0.6;
+      else want = 0;
     }
 
-    // engaged가 아니면 접근 속도 자체를 낮춰서 "앞으로 우르르" 방지
-    const spdMul = engaged ? 1.0 : 0.35;
+    const spdMul = engaged ? 1.0 : 0.25;
     const targetV = want * e.spd * spdMul;
 
-    // ✅ dt 기반 가속/감속
-    const acc = (engaged ? 10 : 6) + (e.tier==="boss"?6:0);
+    const acc = 10 + (e.tier==="boss"?6:0);
     e.vx = lerp(e.vx, targetV, clamp(acc*dt, 0, 1));
 
-    // ✅ 공격: engaged만 공격 시도
-    if(engaged && Math.abs(dx) < (stopDist+10) && e.atkCd<=0 && e.attackLock<=0){
+    // 공격(engaged만)
+    if(engaged && dist < (stopDist + 12) && e.atkCd<=0 && e.attackLock<=0){
       e.anim="attack"; e.animT=0;
       e.attackLock=0.18;
       e.atkCd = (e.tier==="boss")?0.75:0.95;
       e.vx *= 0.35;
     }
 
-    // ✅ 가끔 점프(추적 변주) - engaged만
-    if(engaged && e.onGround && Math.abs(dx) > 300 && Math.random()<0.006){
-      e.vy = -360;
-      e.onGround=false;
-    }
-
-    // 애니메이션
     if(e.attackLock>0) e.anim="attack";
     else if(Math.abs(e.vx)>18) e.anim="run";
     else e.anim="idle";
@@ -2000,7 +2006,7 @@
       p.swingHitIds.clear();
     }
 
-    // ✅ 교대 전투 랭크 계산 (가까운 애들만 적극적으로 붙는다)
+    // ✅ 교대 전투 rank 계산(어그로된 애들만)
     computeEngageRanks(state);
 
     // 적 업데이트
@@ -2043,7 +2049,6 @@
       // ✅ 플레이어 공격 판정(이번 스윙 타입으로 고정)
       const sw = swingActiveWindow(p);
       if(sw.active){
-        // 스윙당 1회만 맞도록
         if(p.swingHitIds.has(e.id)) continue;
 
         const range = sw.range;
@@ -2053,6 +2058,8 @@
 
         if(hit && e.hitCd<=0){
           p.swingHitIds.add(e.id);
+
+          e.aggro = true; // ✅ 맞으면 그 몬스터는 즉시 어그로 ON
 
           e.hitCd = 0.14;
           e.anim="hurt"; e.animT=0;
@@ -2081,10 +2088,8 @@
       }
     }
 
-    // ✅ 몬스터끼리 겹침 정리(“줄 서서 오는” 느낌 제거)
     separateEnemies(state);
 
-    // 코인/드랍 물리 + 줍기
     updateCoinsLoot(dt,state);
     collectNearby(state);
 
@@ -2141,3 +2146,9 @@
 </script>
 </body>
 </html>
+"""
+path = "/mnt/data/index.html"
+with open(path, "w", encoding="utf-8") as f:
+    f.write(content)
+
+path
