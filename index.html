@@ -69,64 +69,126 @@
     }
   }, { passive:false });
 
-  // -------------------- Save/Load (수동 저장 전용) --------------------
+  // -------------------- Save/Load (자동저장 정상복구 + 수동 저장) --------------------
+  // ✅ 기존 키 유지(호환), 백업 키 추가
   const SAVE_KEY = "boss_gate_web_v11_full_shop_inv";
+  const SAVE_KEY_BAK = "boss_gate_web_v11_full_shop_inv__bak";
 
-  // ✅ 저장: "저장 버튼" 눌렀을 때만 호출한다.
-  function saveGame(state) {
+  // ✅ 자동저장 설정
+  const AUTO_SAVE_INTERVAL = 8.0;  // 초 단위 (5~15 권장)
+  let autoSaveT = 0;
+
+  function safeStringify(state){
+    const clone = JSON.parse(JSON.stringify(state));
+    return JSON.stringify(clone);
+  }
+
+  function buildSavePayload(state){
+    const p = state.player;
+    return {
+      ver: state.ver || 11,
+      game: state.game || "보스게이트 (BOSS GATE)",
+      createdAt: state.createdAt || isoNow(),
+      updatedAt: isoNow(),
+
+      // ✅ UI 상태 저장 금지: 로드 시 무조건 PLAY로 복구
+      gs: "PLAY",
+
+      opt: state.opt || { muted:false, bgm:true, sfx:true },
+
+      stageIndex: state.stageIndex || 1,
+      inBossRoom: !!state.inBossRoom,
+
+      player: {
+        hp: p.hp,
+        hpBase: p.hpBase, atkBase: p.atkBase, defBase: p.defBase, critBase: p.critBase, spdBase: p.spdBase,
+
+        potions: p.potions,
+        gold: p.gold,
+        stage: state.stageIndex || p.stage || 1,
+        kills: p.kills || 0,
+
+        appraiseTickets: p.appraiseTickets || 0,
+
+        invItems: p.invItems || [],
+        equip: p.equip || { weapon:null, armor:null, ring:null },
+
+        // ✅ 자연회복 누적값도 함께 저장(있어도 무해)
+        regenBlockT: p.regenBlockT || 0,
+        regenAcc: p.regenAcc || 0,
+      },
+
+      killed: state.killed || 0,
+      goalKills: state.goalKills || 10,
+    };
+  }
+
+  // ✅ 핵심: 저장 전에 기존 메인 저장을 백업으로 밀어두기(정상복구)
+  function saveCore(state){
     try {
-      const p = state.player;
-      const payload = {
-        ver: state.ver || 11,
-        game: state.game || "보스게이트 (BOSS GATE)",
-        createdAt: state.createdAt || isoNow(),
-        updatedAt: isoNow(),
+      const prev = localStorage.getItem(SAVE_KEY);
+      if (prev) localStorage.setItem(SAVE_KEY_BAK, prev);
 
-        // ✅ UI 상태 저장 금지: 로드 시 무조건 PLAY로 복구 (무한루프 방지)
-        gs: "PLAY",
+      const payload = buildSavePayload(state);
+      localStorage.setItem(SAVE_KEY, safeStringify(payload));
 
-        opt: state.opt || { muted:false, bgm:true, sfx:true },
+      state._dirty = false;
+      return true;
+    } catch {
+      return false;
+    }
+  }
 
-        stageIndex: state.stageIndex || 1,
-        inBossRoom: !!state.inBossRoom,
-
-        player: {
-          // 위치/속도는 복구 필요 없으니 최소만 저장
-          hp: p.hp,
-          hpBase: p.hpBase, atkBase: p.atkBase, defBase: p.defBase, critBase: p.critBase, spdBase: p.spdBase,
-
-          potions: p.potions,
-          gold: p.gold,
-          stage: state.stageIndex || p.stage || 1,
-          kills: p.kills || 0,
-
-          appraiseTickets: p.appraiseTickets || 0,
-
-          // 인벤/장비
-          invItems: p.invItems || [],
-          equip: p.equip || { weapon:null, armor:null, ring:null },
-        },
-
-        killed: state.killed || 0,
-        goalKills: state.goalKills || 10,
-      };
-
-      localStorage.setItem(SAVE_KEY, JSON.stringify(payload));
+  // ✅ 수동 저장(버튼)
+  function saveGame(state) {
+    const ok = saveCore(state);
+    if (ok) {
       state.msg = "저장 완료.";
       state.msgT = 1.4;
-      state._dirty = false;
-    } catch {
+    } else {
       state.msg = "저장 실패(브라우저 저장공간 확인)";
       state.msgT = 1.6;
     }
   }
 
-  function load() {
+  // ✅ 자동 저장(무음)
+  function autoSave(state){
+    // PLAY/PAUSE에서만 자동저장(꼬인 UI 저장 방지)
+    const canAutoSave = (state.gs === "PLAY" || state.gs === "PAUSE");
+    if (!canAutoSave) return false;
+    if (!state._dirty) return false;
+    return saveCore(state);
+  }
+
+  function loadMain() {
     try {
       const raw = localStorage.getItem(SAVE_KEY);
       if (!raw) return null;
       return JSON.parse(raw);
     } catch { return null; }
+  }
+  function loadBak() {
+    try {
+      const raw = localStorage.getItem(SAVE_KEY_BAK);
+      if (!raw) return null;
+      return JSON.parse(raw);
+    } catch { return null; }
+  }
+  function loadAny() {
+    return loadMain() || loadBak();
+  }
+
+  function deleteSaves(){
+    try { localStorage.removeItem(SAVE_KEY); } catch {}
+    try { localStorage.removeItem(SAVE_KEY_BAK); } catch {}
+  }
+
+  // ✅ 파괴적 행동(새 게임 등) 전에 현재 저장을 한 번 더 백업으로 남겨둠
+  function backupCurrentSave(){
+    try {
+      const cur = localStorage.getItem(SAVE_KEY);
+      if (cur) localStorage.setItem(SAVE_KEY_BAK, cur);
+    } catch {}
   }
 
   function markDirty(state){ state._dirty = true; }
@@ -781,7 +843,7 @@
   const DROP_RATE_BOSS   = 0.60;
   const BOSS_DOUBLE_DROP_RATE = 0.22;
 
-  // ✅ 전투 종료 후 자연 회복(복구)
+  // ✅ 전투 종료 후 자연 회복
   const REGEN_DELAY = 2.5;
   const REGEN_RATE_PCT = 0.025;   // 초당 최대체력의 2.5%
   const REGEN_NEAR_ENEMY = 420;
@@ -1008,6 +1070,8 @@
       updatedAt: isoNow(),
 
       gs: "MENU",
+      // ✅ 옵션 진입 경로(복귀용)
+      _optionsFrom: "MENU",
 
       opt: { muted:false, bgm:true, sfx:true },
 
@@ -1050,6 +1114,11 @@
     else audio.startBgm();
   }
 
+  function goOptions(state, from){
+    state._optionsFrom = from || "MENU";
+    state.gs = "OPTIONS";
+  }
+
   function rebuildStage(state){
     const si = state.stageIndex;
     state.platforms = buildPlatforms(si);
@@ -1090,13 +1159,16 @@
   }
 
   function startNew(state){
+    // ✅ 새게임으로 덮기 전에 "현재 저장본"을 백업 슬롯에 보존(정상복구)
+    backupCurrentSave();
+
     const opt = state.opt;
     const fresh = freshState();
     fresh.opt = opt;
     Object.assign(state, fresh);
     rebuildStage(state);
     state.gs = "PLAY";
-    state._dirty = true; // 새 게임 시작 -> 저장 안 했음 표시
+    state._dirty = true;
   }
 
   function rollCrit(crit){ return (Math.random()*100) < crit; }
@@ -1422,29 +1494,48 @@
     ctx.textAlign = "left";
 
     const bx = VIEW_W*0.5-180, by = VIEW_H*0.5-70, bw=360, bh=52;
-    const hasSave = !!load();
+    const hasMain = !!localStorage.getItem(SAVE_KEY);
+    const hasBak  = !!localStorage.getItem(SAVE_KEY_BAK);
+    const hasAnySave = hasMain || hasBak;
 
     btn(bx, by, bw, bh, "새 게임 시작", true);
-    btn(bx, by+64, bw, bh, hasSave ? "이어하기" : "이어하기(저장 없음)", hasSave);
-    btn(bx, by+128, bw, bh, "옵션");
-    btn(bx, by+192, bw, bh, "저장 삭제", false);
+    btn(bx, by+64, bw, bh, hasAnySave ? "이어하기(자동저장)" : "이어하기(저장 없음)", hasAnySave);
+    btn(bx, by+128, bw, bh, hasBak ? "백업으로 복구" : "백업으로 복구(없음)", hasBak);
+    btn(bx, by+192, bw, bh, "옵션");
+    btn(bx, by+256, bw, bh, "저장 삭제", false);
 
     if (hitBtn(bx,by,bw,bh)) startNew(state);
 
-    if (hasSave && hitBtn(bx,by+64,bw,bh)) {
-      const s = load();
+    // 이어하기: 메인 우선, 실패 시 백업
+    if (hasAnySave && hitBtn(bx,by+64,bw,bh)) {
+      const s = loadAny();
       if (s) {
         const restored = revive(s);
         Object.assign(state, restored);
         applyOptions(state);
         state.gs = "PLAY";
+        state.msg = "이어하기 완료.";
+        state.msgT = 1.2;
       }
     }
 
-    if (hitBtn(bx,by+128,bw,bh)) { state.gs = "OPTIONS"; }
+    // 백업 복구: 백업만 강제로 로드
+    if (hasBak && hitBtn(bx,by+128,bw,bh)) {
+      const s = loadBak();
+      if (s) {
+        const restored = revive(s);
+        Object.assign(state, restored);
+        applyOptions(state);
+        state.gs = "PLAY";
+        state.msg = "백업으로 복구 완료.";
+        state.msgT = 1.4;
+      }
+    }
 
-    if (hitBtn(bx,by+192,bw,bh)) {
-      localStorage.removeItem(SAVE_KEY);
+    if (hitBtn(bx,by+192,bw,bh)) { goOptions(state, "MENU"); }
+
+    if (hitBtn(bx,by+256,bw,bh)) {
+      deleteSaves();
       state.msg = "저장 삭제 완료.";
       state.msgT = 1.5;
     }
@@ -1463,14 +1554,22 @@
     btn(bx, by, bw, bh, `음소거: ${state.opt.muted ? "ON" : "OFF"}`, !state.opt.muted);
     btn(bx, by+64, bw, bh, `BGM: ${state.opt.bgm ? "ON" : "OFF"}`, state.opt.bgm);
     btn(bx, by+128, bw, bh, `SFX: ${state.opt.sfx ? "ON" : "OFF"}`, state.opt.sfx);
-    btn(bx, by+212, bw, bh, "뒤로가기(ESC)", true);
+
+    const backLabel = (state._optionsFrom === "PAUSE") ? "뒤로가기(ESC) - 메뉴로" : "뒤로가기(ESC)";
+    btn(bx, by+212, bw, bh, backLabel, true);
 
     if (hitBtn(bx,by,bw,bh)) { state.opt.muted = !state.opt.muted; applyOptions(state); }
     if (hitBtn(bx,by+64,bw,bh)) { state.opt.bgm = !state.opt.bgm; applyOptions(state); }
     if (hitBtn(bx,by+128,bw,bh)) { state.opt.sfx = !state.opt.sfx; applyOptions(state); }
-    if (hitBtn(bx,by+212,bw,bh)) { state.gs = "MENU"; }
+    if (hitBtn(bx,by+212,bw,bh)) {
+      state.gs = (state._optionsFrom === "PAUSE") ? "PAUSE" : "MENU";
+    }
 
-    if (pressed.menu) { pressed.menu=false; state.gs="MENU"; }
+    // ✅ ESC도 "들어온 곳"으로 복귀 (중요: 재개 날아가는 문제 해결)
+    if (pressed.menu) {
+      pressed.menu=false;
+      state.gs = (state._optionsFrom === "PAUSE") ? "PAUSE" : "MENU";
+    }
   }
 
   // -------------------- PAUSE MENU --------------------
@@ -1493,12 +1592,18 @@
       { t:"재개", hot:true, fn:()=> state.gs="PLAY" },
       { t:"인벤토리(🎒/I)", hot:false, fn:()=> state.gs="INV" },
       { t:"상점/감정(🏪)", hot:false, fn:()=> state.gs="SHOP" },
-      { t:"옵션", hot:false, fn:()=> state.gs="OPTIONS" },
+      { t:"옵션", hot:false, fn:()=> goOptions(state, "PAUSE") },
 
       // ✅ 수동 저장 버튼
       { t:`저장(수동) ${state._dirty ? "" : "(최신)"}`, hot:false, fn:()=> saveGame(state) },
 
-      { t:"타이틀로", hot:false, fn:()=> { state.gs="MENU"; state.msg="타이틀로 이동."; state.msgT=1.3; } },
+      // ✅ 타이틀로: 나갈 때 자동저장 한 번(정상복구 목적)
+      { t:"타이틀로(자동저장)", hot:false, fn:()=> {
+        autoSave(state);
+        state.gs="MENU";
+        state.msg="타이틀로 이동.";
+        state.msgT=1.3;
+      }},
     ];
 
     for (let i=0;i<items.length;i++){
@@ -1509,7 +1614,7 @@
 
     ctx.fillStyle = "rgba(235,240,255,0.65)";
     ctx.font = "12px ui-monospace, Menlo, Consolas";
-    ctx.fillText("ESC: 닫기 / I: 인벤 / 저장은 '저장(수동)' 버튼만", bx, py+365);
+    ctx.fillText("ESC: 닫기 / I: 인벤 / 자동저장: 전투 중 주기적으로 + 타이틀 이동 시", bx, py+365);
 
     if (pressed.menu) { pressed.menu = false; state.gs = "PLAY"; }
     if (pressed.inv) { pressed.inv = false; state.gs = "INV"; }
@@ -1535,7 +1640,7 @@
     p.hp = clamp(p.hp, 1, d.hpMax);
   }
 
-  // ✅ 장착(가방 → 장비): autoEquipBest로 덮어쓰지 않게 수정
+  // ✅ 장착(가방 → 장비)
   function equipFromBag(state, itemId){
     const p = state.player;
     const idx = p.invItems.findIndex(x=>x.id===itemId);
@@ -1551,7 +1656,7 @@
     return true;
   }
 
-  // ✅ 해제(장비 → 가방): autoEquipBest가 즉시 재장착하는 문제 제거
+  // ✅ 해제(장비 → 가방)
   function unequipToBag(state, slot){
     const p = state.player;
     const cur = p.equip[slot];
@@ -1969,7 +2074,7 @@
     p.attackLock = Math.max(0, p.attackLock - dt);
     p.potionCd = Math.max(0, p.potionCd - dt);
 
-    // ✅ 전투 종료 후 자연 회복(복구)
+    // ✅ 전투 종료 후 자연 회복
     let nearEnemy = false;
     for (const e of state.enemies) {
       if (e.dead) continue;
@@ -2024,7 +2129,7 @@
 
     // 공격(Z)
     if (doAtk && p.atkCd <= 0) {
-      p.regenBlockT = REGEN_DELAY; // 전투 행위 -> 회복 막기
+      p.regenBlockT = REGEN_DELAY;
       p.atkCd = 0.30;
       p.anim = "attack"; p.animT = 0;
       p.attackLock = Math.max(p.attackLock, ATTACK_LOCK_ATK);
@@ -2066,7 +2171,7 @@
 
     // 스킬(X)
     if (doSkl && p.skillCd <= 0) {
-      p.regenBlockT = REGEN_DELAY; // 전투 행위 -> 회복 막기
+      p.regenBlockT = REGEN_DELAY;
       p.skillCd = 2.8;
       p.atkCd = 0.42;
       p.anim = "attack"; p.animT = 0;
@@ -2131,7 +2236,7 @@
       if (overlapped) stabilizeOverlapNoBounce(p, e);
 
       if (overlapped && p.inv <= 0 && p.hitCd <= 0) {
-        p.regenBlockT = REGEN_DELAY; // 피격 -> 회복 막기
+        p.regenBlockT = REGEN_DELAY;
 
         const { dmg } = damageCalc(e.atk, d.def, 0, 1);
 
@@ -2149,6 +2254,7 @@
           const lost = Math.round(p.gold * 0.08);
           p.gold = Math.max(0, p.gold - lost);
           p.hp = d.hpMax;
+          // ✅ 죽기 직전 상태까지 저장되는 것 방지: 여기서는 저장하지 않고 타이틀로만
           state.gs = "MENU";
           state.msg = `보스게이트에서 쓰러졌다… ${lost}G 잃음.`;
           state.msgT = 2.0;
@@ -2236,7 +2342,7 @@
     state.camX = lerp(state.camX, targetX, smoothFactor(dt, 18));
     cam.x = state.camX;
 
-    // HUD 클릭(⚙/🧪/🎒) - ✅ 저장 호출 제거(자동 저장 금지)
+    // HUD 클릭(⚙/🧪/🎒)
     const hotGear = (pointer.x>=HUD_MENU_BTN.x && pointer.x<=HUD_MENU_BTN.x+HUD_MENU_BTN.w &&
                      pointer.y>=HUD_MENU_BTN.y && pointer.y<=HUD_MENU_BTN.y+HUD_MENU_BTN.h);
     if (pointer.clicked && hotGear) state.gs = "PAUSE";
@@ -2300,7 +2406,7 @@
   }
 
   // -------------------- Main Loop --------------------
-  let state = load() ? revive(load()) : freshState();
+  let state = loadAny() ? revive(loadAny()) : freshState();
   applyOptions(state);
   if (state.gs === "PLAY") rebuildStage(state);
 
@@ -2312,6 +2418,13 @@
     state.t += dt;
 
     if (state.gs === "PLAY") updatePlay(state, dt);
+
+    // ✅ 자동저장 타이머
+    autoSaveT += dt;
+    if (autoSaveT >= AUTO_SAVE_INTERVAL) {
+      autoSaveT = 0;
+      autoSave(state);
+    }
 
     state.updatedAt = isoNow();
 
@@ -2327,10 +2440,11 @@
     // ESC fallback
     if (pressed.menu) {
       pressed.menu = false;
-      if (state.gs === "OPTIONS") state.gs = "MENU";
+      if (state.gs === "OPTIONS") state.gs = (state._optionsFrom === "PAUSE") ? "PAUSE" : "MENU";
       else if (state.gs === "INV" || state.gs === "SHOP") state.gs = "PAUSE";
       else if (state.gs === "PAUSE") state.gs = "PLAY";
       else if (state.gs === "PLAY") state.gs = "PAUSE";
+      else if (state.gs === "MENU") { /* noop */ }
     }
 
     pointer.clicked = false;
