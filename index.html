@@ -853,6 +853,9 @@
       // ✅ 몬스터마다 약간의 성격(추적 거리/가속) 차이를 줘서 ‘행렬’ 느낌 완화
       this.bias = rand(-0.12, 0.12);
       this.keepDist = (tier==="boss") ? 90 : (tier==="elite" ? 78 : 72);
+
+      // ✅ 교대 전투용 랭크(계산됨)
+      this.engageRank = 999;
     }
   }
 
@@ -1192,6 +1195,16 @@
           b.vx *= 0.85;
         }
       }
+    }
+  }
+
+  // ✅ 동시에 달라붙는 몬스터 제한(교대 전투)
+  function computeEngageRanks(state){
+    const p = state.player;
+    const live = state.enemies.filter(e=>!e.dead);
+    live.sort((a,b)=>Math.abs(a.x-p.x)-Math.abs(b.x-p.x));
+    for(let i=0;i<live.length;i++){
+      live[i].engageRank = i; // 0이 가장 가까움
     }
   }
 
@@ -1552,7 +1565,8 @@
     p.gold -= APPRAISE_PRICE;
     appraise(it);
     audio.playCoin();
-    state.msg=`감정 완료! (-${APPRAISE_PRICE}G)`; state.msgT=1.4;
+    state.msg=`감정 완료! (-${APPRAISE_PRICE}G)`;
+    state.msgT=1.4;
     markDirty(state);
     return true;
   }
@@ -1815,6 +1829,7 @@
     }
   }
 
+  // ✅ 교대 전투 + 후퇴/거리유지 AI (가만히 칼질 방지)
   function updateEnemyAI(dt,state,e){
     if(e.dead) return;
 
@@ -1827,26 +1842,51 @@
     const dir = dx===0 ? 0 : Math.sign(dx);
     e.face = dir===0 ? e.face : dir;
 
-    // ✅ 너무 멀면 추적, 너무 가까우면 멈춤(개별 keepDist)
-    const stopDist = e.keepDist + e.bias*40;
-    const want = (Math.abs(dx) > stopDist) ? dir : 0;
+    // ✅ 교대 전투: 가까운 몬스터만 적극적으로 접근
+    const MAX_ENGAGE = 2; // 2~3 추천
+    const rank = (e.engageRank ?? 999);
+    const engaged = (rank < MAX_ENGAGE);
 
-    // ✅ dt 기반 가속/감속 (px/s)
-    const targetV = want * e.spd;
-    const acc = 10 + (e.tier==="boss"?6:0); // 반응성
+    // ✅ 거리 유지 로직
+    const baseStop = e.keepDist + e.bias*40;
+    const minDist  = baseStop * 0.72; // 너무 가까우면 "후퇴"
+    const stopDist = baseStop;
+
+    // engaged 아니면 더 멀리 떨어져있게 (우르르 방지)
+    const farBias = engaged ? 0 : (80 + Math.min(120, rank*10));
+    const desiredDist = stopDist + farBias;
+
+    let want = 0;
+
+    if(Math.abs(dx) < minDist){
+      // 너무 가까우면 뒤로 물러남
+      want = -dir;
+    }else if(Math.abs(dx) > desiredDist){
+      // 멀면 접근
+      want = dir;
+    }else{
+      // 적당 거리면 제자리
+      want = 0;
+    }
+
+    // engaged가 아니면 접근 속도 자체를 낮춰서 "앞으로 우르르" 방지
+    const spdMul = engaged ? 1.0 : 0.35;
+    const targetV = want * e.spd * spdMul;
+
+    // ✅ dt 기반 가속/감속
+    const acc = (engaged ? 10 : 6) + (e.tier==="boss"?6:0);
     e.vx = lerp(e.vx, targetV, clamp(acc*dt, 0, 1));
 
-    // 공격(접근 시)
-    if(Math.abs(dx) < (stopDist+10) && e.atkCd<=0 && e.attackLock<=0){
+    // ✅ 공격: engaged만 공격 시도
+    if(engaged && Math.abs(dx) < (stopDist+10) && e.atkCd<=0 && e.attackLock<=0){
       e.anim="attack"; e.animT=0;
       e.attackLock=0.18;
       e.atkCd = (e.tier==="boss")?0.75:0.95;
-      // 공격할 땐 잠깐 속도 줄여서 “에스컬레이터” 느낌 제거
       e.vx *= 0.35;
     }
 
-    // 가끔 점프(추적 변주)
-    if(e.onGround && Math.abs(dx) > 300 && Math.random()<0.006){
+    // ✅ 가끔 점프(추적 변주) - engaged만
+    if(engaged && e.onGround && Math.abs(dx) > 300 && Math.random()<0.006){
       e.vy = -360;
       e.onGround=false;
     }
@@ -1959,6 +1999,9 @@
       p.swingTotal=0;
       p.swingHitIds.clear();
     }
+
+    // ✅ 교대 전투 랭크 계산 (가까운 애들만 적극적으로 붙는다)
+    computeEngageRanks(state);
 
     // 적 업데이트
     for(const e of state.enemies){
