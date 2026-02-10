@@ -881,6 +881,10 @@
       this.atkCd=0;
       this.attackLock=0;
 
+      // ✅ [추가] 몬스터 공격도 "스윙 1회 타격"과 "활성 프레임"을 갖게 한다
+      this.attackTotal = 0;
+      this.hitPlayerThisSwing = false;
+
       // ✅ 몬스터마다 약간의 성격(추적 거리/가속) 차이를 줘서 ‘행렬’ 느낌 완화
       this.bias = rand(-0.12, 0.12);
       this.keepDist = (tier==="boss") ? 90 : (tier==="elite" ? 78 : 72);
@@ -892,7 +896,10 @@
       this.aggro = (tier === "boss"); // 보스는 항상 어그로
       this.spawnX = x;                // 원래 위치(리시 기준)
       this.leashDist = (tier === "boss") ? 9999 : (tier === "elite" ? 280 : 240);
-      this.aggroRange = (tier === "boss") ? 260 : (tier === "elite" ? 220 : 200);
+
+      // ✅ [수정] 인식 범위 2배
+      this.aggroRange = ((tier === "boss") ? 260 : (tier === "elite" ? 220 : 200)) * 2;
+
       this.engageRank = 999;          // 0이 가장 적극적(플레이어 근접/전투)
     }
   }
@@ -1233,7 +1240,6 @@
           const dir=(dx===0)?(Math.random()<0.5?-1:1):Math.sign(dx);
           a.x -= dir*push;
           b.x += dir*push;
-          // 약간 속도도 서로 깎음
           a.vx *= 0.85;
           b.vx *= 0.85;
         }
@@ -1882,7 +1888,6 @@
   function computeEngageRanks(state){
     const p=state.player;
     const live = state.enemies.filter(e=>!e.dead);
-    // 거리 순 정렬
     live.sort((a,b)=>Math.abs((a.x-p.x)) - Math.abs((b.x-p.x)));
     for(let i=0;i<live.length;i++){
       live[i].engageRank = i;
@@ -1917,14 +1922,12 @@
 
     // ✅ 비-어그로 상태: 제자리 근처에서만 약간 움직이거나 대기
     if(!e.aggro){
-      // 스폰 위치로 자연 복귀
       const back = e.spawnX - e.x;
       const want = (Math.abs(back) > 16) ? Math.sign(back) : 0;
       const targetV = want * (e.spd*0.35);
       const acc = 10;
       e.vx = lerp(e.vx, targetV, clamp(acc*dt,0,1));
 
-      // 애니메이션
       if(Math.abs(e.vx)>18) e.anim="run";
       else e.anim="idle";
       return;
@@ -1941,15 +1944,19 @@
 
     // ✅ dt 기반 가속/감속 (px/s)
     const targetV = want * e.spd;
-    const acc = engaged ? (12 + (e.tier==="boss"?6:0)) : 6; // 비-주공은 반응 느리게
+    const acc = engaged ? (12 + (e.tier==="boss"?6:0)) : 6;
     e.vx = lerp(e.vx, targetV, clamp(acc*dt, 0, 1));
 
-    // 공격(접근 시) — engaged만 공격(동시 공격 체감 낮춤)
+    // 공격(접근 시) — engaged만 공격
     if(engaged && dist < (stopDist+10) && e.atkCd<=0 && e.attackLock<=0){
       e.anim="attack"; e.animT=0;
-      e.attackLock=0.18;
+
+      // ✅ [수정] 공격 시작 시 "공격 총 길이"와 "이번 공격 1회 타격" 초기화
+      e.attackTotal = 0.18;
+      e.attackLock  = e.attackTotal;
+      e.hitPlayerThisSwing = false;
+
       e.atkCd = (e.tier==="boss")?0.75:0.95;
-      // 공격할 땐 잠깐 속도 줄여서 “에스컬레이터” 느낌 제거
       e.vx *= 0.35;
     }
 
@@ -1999,7 +2006,6 @@
     state.t += dt;
     if(state.msgT>0) state.msgT -= dt;
 
-    // ✅ 데미지 숫자/파편/히트 이펙트가 계속 쌓이는 문제 해결
     updateEffects(dt,state);
 
     p.atkCd = Math.max(0,p.atkCd-dt);
@@ -2092,21 +2098,39 @@
       collidePlatforms(e, state.platforms, dt);
       e.animT += dt;
 
-      // 접촉 데미지 (적 공격 모션 중 + 근접)
-      if(e.attackLock>0 && p.inv<=0 && p.hitCd<=0){
-        const hit = aabb(p.x-p.w/2,p.y-p.h/2,p.w,p.h, e.x-e.w/2,e.y-e.h/2,e.w,e.h);
-        if(hit){
-          p.hitCd = CONTACT_DAMAGE_COOLDOWN;
-          p.inv = 0.18;
-          const dmg = Math.max(1, e.atk - d.def);
-          p.hp -= dmg;
-          state.dmgText.push(new DamageText(p.x,p.y-72,`-${dmg}`,"rgba(255,91,110,0.95)"));
-          spawnHitFX(state,p.x,p.y-20);
-          if(p.hp<=0){
-            p.hp=1;
-            p.gold = Math.max(0, Math.floor(p.gold*0.85));
-            state.msg="쓰러졌다… 골드를 일부 잃었다.";
-            state.msgT=1.6;
+      // ✅ [수정] 몬스터 공격 판정: 겹침이 아니라 "앞쪽 히트박스"로 1회 타격
+      if(e.attackLock>0 && p.inv<=0 && p.hitCd<=0 && !e.hitPlayerThisSwing && e.attackTotal>0){
+        const prog = 1 - (e.attackLock / e.attackTotal); // 0..1
+        const active = (prog >= 0.22 && prog <= 0.60);   // 공격이 실제로 들어가는 구간
+
+        if(active){
+          const range = (e.tier==="boss") ? 96 : (e.tier==="elite" ? 86 : 82);
+          const cx = e.x + e.face * range * 0.55;
+          const cy = e.y - 10;
+
+          const hit = aabb(
+            cx - 52, cy - 38, 104, 76,
+            p.x - p.w/2, p.y - p.h/2, p.w, p.h
+          );
+
+          if(hit){
+            e.hitPlayerThisSwing = true;
+
+            p.hitCd = CONTACT_DAMAGE_COOLDOWN;
+            p.inv = 0.18;
+
+            const dmg = Math.max(1, e.atk - d.def);
+            p.hp -= dmg;
+
+            state.dmgText.push(new DamageText(p.x,p.y-72,`-${dmg}`,"rgba(255,91,110,0.95)"));
+            spawnHitFX(state,p.x,p.y-20);
+
+            if(p.hp<=0){
+              p.hp=1;
+              p.gold = Math.max(0, Math.floor(p.gold*0.85));
+              state.msg="쓰러졌다… 골드를 일부 잃었다.";
+              state.msgT=1.6;
+            }
           }
         }
       }
@@ -2114,7 +2138,6 @@
       // ✅ 플레이어 공격 판정(이번 스윙 타입으로 고정)
       const sw = swingActiveWindow(p);
       if(sw.active){
-        // 스윙당 1회만 맞도록
         if(p.swingHitIds.has(e.id)) continue;
 
         const range = sw.range;
@@ -2152,10 +2175,8 @@
       }
     }
 
-    // ✅ 몬스터끼리 겹침 정리(“줄 서서 오는” 느낌 제거)
     separateEnemies(state);
 
-    // 코인/드랍 물리 + 줍기
     updateCoinsLoot(dt,state);
     collectNearby(state);
 
