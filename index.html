@@ -14,6 +14,7 @@
     #wrap{height:100%;display:flex;align-items:center;justify-content:center;}
     #stage{width:min(100vw,960px);aspect-ratio:16/9;display:flex;align-items:center;justify-content:center;}
     canvas{width:100%;height:100%;display:block;image-rendering:auto;background:#000;border-radius:12px;}
+
     /* Touch pad */
     #touch{
       position:fixed;left:0;right:0;bottom:0;
@@ -102,7 +103,7 @@
   },{passive:false});
 
   // -------------------- Save/Load (수동 저장 전용) --------------------
-  const SAVE_KEY = "boss_gate_web_v12_full_fixed";
+  const SAVE_KEY = "boss_gate_web_v12_full_fixed"; // 유지(세이브 호환)
 
   function saveGame(state){
     try{
@@ -715,15 +716,13 @@
   const DROP_RATE_BOSS=0.70;
   const BOSS_DOUBLE_DROP_RATE=0.22;
 
-  function snapToGround(ent){
-    const gy=GROUND_Y-ent.h/2;
-    if(ent.y>gy){ ent.y=gy; ent.vy=0; ent.onGround=true; }
-  }
+  // ✅ 속도 단위를 px/s로 통일(가장 중요한 수정)
+  // 이동/충돌에서 x += vx*dt, y += vy*dt 로 변경
 
   class Player{
     constructor(){
       this.x=220; this.y=200;
-      this.vx=0; this.vy=0;
+      this.vx=0; this.vy=0; // px/s
       this.w=42; this.h=54;
       this.face=1; this.onGround=false;
 
@@ -731,7 +730,7 @@
       this.atkBase=14;
       this.defBase=6;
       this.critBase=6;
-      this.spdBase=230;
+      this.spdBase=230; // px/s
 
       this.hp=120;
       this.atkCd=0;
@@ -752,6 +751,11 @@
 
       this.anim="idle";
       this.animT=0;
+
+      // ✅ 공격 타입 혼동 수정: “이번 스윙이 평타/스킬인지” 고정
+      this.swingType=null;        // "atk" | "skill" | null
+      this.swingTotal=0;          // 이번 스윙 락 총 길이
+      this.swingHitIds=new Set(); // 이번 스윙에서 이미 맞춘 적 id
 
       this.invItems=[
         makeItem("weapon",1),
@@ -822,8 +826,9 @@
 
   class Slime{
     constructor(x,y,tier,stageIndex){
+      this.id=uuid();
       this.x=x; this.y=y;
-      this.vx=0; this.vy=0;
+      this.vx=0; this.vy=0; // px/s
       this.w=44; this.h=42;
       this.face=-1; this.onGround=false;
 
@@ -832,7 +837,7 @@
       this.hp=this.hpMax;
       this.atk=10+stageIndex*4+(tier==="elite"?10:0)+(tier==="boss"?26:0);
       this.def=2+Math.floor(stageIndex/2)+(tier==="elite"?3:0)+(tier==="boss"?8:0);
-      this.spd=(tier==="boss"?150:(tier==="elite"?190:170));
+      this.spd=(tier==="boss"?150:(tier==="elite"?190:170)); // px/s
 
       this.hitCd=0;
       this.aiT=0;
@@ -844,6 +849,10 @@
 
       this.atkCd=0;
       this.attackLock=0;
+
+      // ✅ 몬스터마다 약간의 성격(추적 거리/가속) 차이를 줘서 ‘행렬’ 느낌 완화
+      this.bias = rand(-0.12, 0.12);
+      this.keepDist = (tier==="boss") ? 90 : (tier==="elite" ? 78 : 72);
     }
   }
 
@@ -988,6 +997,9 @@
     state.player.y=GROUND_Y-120;
     state.player.vx=0; state.player.vy=0;
     state.player.attackLock=0;
+    state.player.swingType=null;
+    state.player.swingTotal=0;
+    state.player.swingHitIds.clear();
 
     state.camX=0;
 
@@ -1052,16 +1064,8 @@
     p.hp = clamp(p.hp, 1, p.derived().hpMax);
 
     state.player=p;
-    state.platforms=buildPlatforms(state.stageIndex);
-    state.enemies=[];
-    state.coins=[];
-    state.loots=[];
-    state.fx=[];
-    state.dmgText=[];
-    state.parts=[];
-    state.door=null;
 
-    // 로드시 현재 스테이지에 맞게 적 다시 생성(저장 복잡도↓)
+    // 로드시 현재 스테이지에 맞게 적 다시 생성
     rebuildStage(state);
 
     state.gs="PLAY";
@@ -1134,10 +1138,12 @@
     markDirty(state);
   }
 
-  function collidePlatforms(ent,plats){
+  // ✅ dt 기반 충돌/이동 (px/s)
+  function collidePlatforms(ent,plats,dt){
     ent.onGround=false;
 
-    ent.x += ent.vx;
+    // X
+    ent.x += ent.vx * dt;
     for(const p of plats){
       if(aabb(ent.x-ent.w/2,ent.y-ent.h/2,ent.w,ent.h,p.x,p.y,p.w,p.h)){
         if(ent.vx>0) ent.x=p.x-(ent.w/2);
@@ -1146,7 +1152,8 @@
       }
     }
 
-    ent.y += ent.vy;
+    // Y
+    ent.y += ent.vy * dt;
     for(const p of plats){
       if(aabb(ent.x-ent.w/2,ent.y-ent.h/2,ent.w,ent.h,p.x,p.y,p.w,p.h)){
         if(ent.vy>0){
@@ -1162,6 +1169,30 @@
 
     ent.x=clamp(ent.x,40,WORLD.w-40);
     ent.y=clamp(ent.y,40,WORLD.h-40);
+  }
+
+  // ✅ 몬스터끼리 겹쳐서 “줄지어 밀려오는” 느낌을 만드는 문제 해결: 간단 분리
+  function separateEnemies(state){
+    const arr=state.enemies;
+    for(let i=0;i<arr.length;i++){
+      const a=arr[i]; if(a.dead) continue;
+      for(let j=i+1;j<arr.length;j++){
+        const b=arr[j]; if(b.dead) continue;
+        const dx=b.x-a.x;
+        const dy=b.y-a.y;
+        const minX=(a.w+b.w)*0.48;
+        const minY=(a.h+b.h)*0.30;
+        if(Math.abs(dx)<minX && Math.abs(dy)<minY){
+          const push=(minX-Math.abs(dx))*0.5;
+          const dir=(dx===0)?(Math.random()<0.5?-1:1):Math.sign(dx);
+          a.x -= dir*push;
+          b.x += dir*push;
+          // 약간 속도도 서로 깎음
+          a.vx *= 0.85;
+          b.vx *= 0.85;
+        }
+      }
+    }
   }
 
   // -------------------- Draw world --------------------
@@ -1599,14 +1630,12 @@
       ctx.font="12px ui-monospace, Menlo, Consolas";
       ctx.fillText(line, ex+10, yy-2);
 
-      // 클릭: 선택
       if(hitBtn(ex,yy-22,380,28) && it){
         state.invSelId=it.id;
       }
-      // 우클릭/긴기능 없으니 버튼으로 처리
     }
 
-    // 가방 리스트 (스크롤 간단화)
+    // 가방 리스트 (스크롤)
     const bx=x+420, by=y+78;
     const listH=280;
     const visRows=Math.floor(listH/rowH);
@@ -1634,12 +1663,10 @@
       }
     }
 
-    // 선택 상세/버튼
     const sel = p.invItems.find(it=>it.id===state.invSelId) || Object.values(p.equip).find(it=>it && it.id===state.invSelId) || null;
     if(sel){
       drawItemDetail(state, x+18, y+320, 802, 120, sel);
 
-      // 버튼들
       const bY=y+450-44;
       const bW=190, bH=38;
       const b1X=x+18;
@@ -1647,7 +1674,6 @@
       const b3X=x+18+(bW+12)*2;
       const b4X=x+18+(bW+12)*3;
 
-      // 장착/해제
       const inBag = p.invItems.some(it=>it.id===sel.id);
       const slot = sel.slot;
 
@@ -1677,7 +1703,6 @@
       if(hitBtn(x+18, y+450-44, 802, 38)) state.gs = state.returnGs || "PAUSE";
     }
 
-    // 단축키
     if(pressed.menu){ pressed.menu=false; state.gs = state.returnGs || "PAUSE"; }
     if(pressed.inv){ pressed.inv=false; state.gs = state.returnGs || "PAUSE"; }
   }
@@ -1694,7 +1719,6 @@
     ctx.font="12px ui-monospace, Menlo, Consolas";
     ctx.fillText(`보유 골드: ${p.gold}G   |   포션: ${p.potions}/${POTION_MAX}   |   감정권: ${p.appraiseTickets}`, x+18, y+60);
 
-    // 구매 버튼
     const bY=y+92;
     btn(x+18,bY,320,52,`포션 구매 (+1) -${POTION_PRICE}G`, true);
     btn(x+18,bY+64,320,52,`감정 서비스 -${APPRAISE_PRICE}G (또는 감정권)`, false);
@@ -1714,7 +1738,6 @@
     }
 
     if(hitBtn(x+18,bY+64,320,52)){
-      // “가방에 있는 미감정” 1개를 자동 감정
       const target = p.invItems.find(it=>!it.identified) || Object.values(p.equip).find(it=>it && !it.identified);
       if(!target){ state.msg="미감정 아이템이 없다."; state.msgT=1.2; }
       else appraiseOne(state, target.id);
@@ -1730,7 +1753,6 @@
       state.gs = state.returnGs || "PAUSE";
     }
 
-    // 우측: 가이드
     ctx.fillStyle="rgba(235,240,255,0.70)";
     ctx.font="13px system-ui, -apple-system, Segoe UI";
     ctx.fillText("TIP", x+380, y+118);
@@ -1769,7 +1791,6 @@
   function collectNearby(state){
     const p=state.player;
 
-    // coins
     for(let i=state.coins.length-1;i>=0;i--){
       const c=state.coins[i];
       const dx=c.x-p.x, dy=c.y-p.y;
@@ -1781,7 +1802,6 @@
       }
     }
 
-    // loots
     for(let i=state.loots.length-1;i>=0;i--){
       const l=state.loots[i];
       const dx=l.x-p.x, dy=l.y-p.y;
@@ -1804,27 +1824,48 @@
 
     const p=state.player;
     const dx=p.x-e.x;
-
-    // 간단 추적
     const dir = dx===0 ? 0 : Math.sign(dx);
     e.face = dir===0 ? e.face : dir;
 
-    // 이동: 플레이어 쪽으로
-    const want = Math.abs(dx) > 70 ? dir : 0;
-    e.vx = lerp(e.vx, want * e.spd * 0.016, 0.25);
-    e.vx = clamp(e.vx, -3.0, 3.0);
+    // ✅ 너무 멀면 추적, 너무 가까우면 멈춤(개별 keepDist)
+    const stopDist = e.keepDist + e.bias*40;
+    const want = (Math.abs(dx) > stopDist) ? dir : 0;
 
-    // 점프 간단
-    if(e.onGround && Math.abs(dx) > 260 && Math.random()<0.008){
+    // ✅ dt 기반 가속/감속 (px/s)
+    const targetV = want * e.spd;
+    const acc = 10 + (e.tier==="boss"?6:0); // 반응성
+    e.vx = lerp(e.vx, targetV, clamp(acc*dt, 0, 1));
+
+    // 공격(접근 시)
+    if(Math.abs(dx) < (stopDist+10) && e.atkCd<=0 && e.attackLock<=0){
+      e.anim="attack"; e.animT=0;
+      e.attackLock=0.18;
+      e.atkCd = (e.tier==="boss")?0.75:0.95;
+      // 공격할 땐 잠깐 속도 줄여서 “에스컬레이터” 느낌 제거
+      e.vx *= 0.35;
+    }
+
+    // 가끔 점프(추적 변주)
+    if(e.onGround && Math.abs(dx) > 300 && Math.random()<0.006){
       e.vy = -360;
       e.onGround=false;
     }
 
-    // 공격(접근 시)
-    if(Math.abs(dx) < 78 && e.atkCd<=0 && e.attackLock<=0){
-      e.anim="attack"; e.animT=0;
-      e.attackLock=0.18;
-      e.atkCd = (e.tier==="boss")?0.75:0.95;
+    // 애니메이션
+    if(e.attackLock>0) e.anim="attack";
+    else if(Math.abs(e.vx)>18) e.anim="run";
+    else e.anim="idle";
+  }
+
+  function swingActiveWindow(p){
+    if(!p.swingType || p.attackLock<=0 || p.swingTotal<=0) return {active:false,mult:1,range:76};
+    const prog = 1 - (p.attackLock / p.swingTotal); // 0..1
+    if(p.swingType==="atk"){
+      const active = (prog>=0.22 && prog<=0.55);
+      return {active, mult:1.0, range:76};
+    }else{
+      const active = (prog>=0.18 && prog<=0.68);
+      return {active, mult:1.55, range:110};
     }
   }
 
@@ -1832,7 +1873,6 @@
     const p=state.player;
     const d=p.derived();
 
-    // UI 클릭 (HUD)
     if(hitBtn(HUD_MENU_BTN.x,HUD_MENU_BTN.y,HUD_MENU_BTN.w,HUD_MENU_BTN.h)){
       state.gs="PAUSE";
     }
@@ -1844,16 +1884,13 @@
       tryUsePotion(state);
     }
 
-    // 단축키
     if(pressed.menu){ pressed.menu=false; state.gs="PAUSE"; }
     if(pressed.inv){ pressed.inv=false; state.returnGs="PLAY"; state.gs="INV"; }
     if(pressed.potion){ pressed.potion=false; tryUsePotion(state); }
 
-    // 타이머
     state.t += dt;
     if(state.msgT>0) state.msgT -= dt;
 
-    // cooldowns
     p.atkCd = Math.max(0,p.atkCd-dt);
     p.skillCd = Math.max(0,p.skillCd-dt);
     p.potionCd = Math.max(0,p.potionCd-dt);
@@ -1861,14 +1898,15 @@
     p.inv = Math.max(0,p.inv-dt);
     p.attackLock = Math.max(0,p.attackLock-dt);
 
-    // 이동
+    // ✅ 이동 (px/s)
     const ax = moveAxis();
     if(p.attackLock<=0){
-      p.vx = lerp(p.vx, ax * (d.spd*0.016), 0.28);
-      p.vx = clamp(p.vx, -3.4, 3.4);
+      const target = ax * d.spd;
+      const acc = 12;
+      p.vx = lerp(p.vx, target, clamp(acc*dt,0,1));
       if(ax!==0) p.face = ax>0 ? 1 : -1;
     }else{
-      p.vx *= Math.pow(0.16, dt);
+      p.vx = lerp(p.vx, 0, clamp(16*dt,0,1));
     }
 
     // 점프
@@ -1878,36 +1916,48 @@
     }
     pressed.jump=false;
 
-    // 중력
+    // 중력 (px/s^2)
     p.vy += 980*dt;
     p.vy = clamp(p.vy,-900,900);
 
     // 충돌
-    collidePlatforms(p, state.platforms);
+    collidePlatforms(p, state.platforms, dt);
 
     // 애니메이션
     if(p.hitCd>0) { p.anim="hurt"; }
-    else if(p.attackLock>0) { /* 유지 */ }
+    else if(p.attackLock>0) { p.anim="attack"; }
     else if(!p.onGround) p.anim="jump";
-    else if(Math.abs(p.vx)>0.25) p.anim="run";
+    else if(Math.abs(p.vx)>18) p.anim="run";
     else p.anim="idle";
     p.animT += dt;
 
-    // 공격 / 스킬
+    // 공격 / 스킬 (시작)
     const doAtk = wantAttack() && p.atkCd<=0 && p.attackLock<=0;
     const doSkl = wantSkill() && p.skillCd<=0 && p.attackLock<=0;
 
     if(doAtk){
       p.anim="attack"; p.animT=0;
+      p.swingType="atk";
+      p.swingTotal=ATTACK_LOCK_ATK;
+      p.swingHitIds.clear();
       p.attackLock = ATTACK_LOCK_ATK;
       p.atkCd = 0.26;
       pressed.atk=false;
     }
     if(doSkl){
       p.anim="attack"; p.animT=0;
+      p.swingType="skill";
+      p.swingTotal=ATTACK_LOCK_SKL;
+      p.swingHitIds.clear();
       p.attackLock = ATTACK_LOCK_SKL;
       p.skillCd = 2.8;
       pressed.skill=false;
+    }
+    // 스윙 종료 처리
+    if(p.attackLock<=0 && p.swingType){
+      p.swingType=null;
+      p.swingTotal=0;
+      p.swingHitIds.clear();
     }
 
     // 적 업데이트
@@ -1925,7 +1975,7 @@
 
       updateEnemyAI(dt,state,e);
 
-      collidePlatforms(e, state.platforms);
+      collidePlatforms(e, state.platforms, dt);
       e.animT += dt;
 
       // 접촉 데미지 (적 공격 모션 중 + 근접)
@@ -1940,7 +1990,6 @@
           spawnHitFX(state,p.x,p.y-20);
           if(p.hp<=0){
             p.hp=1;
-            // 간단 패널티
             p.gold = Math.max(0, Math.floor(p.gold*0.85));
             state.msg="쓰러졌다… 골드를 일부 잃었다.";
             state.msgT=1.6;
@@ -1948,43 +1997,49 @@
         }
       }
 
-      // 플레이어 공격 판정: 공격락 시간 초반에만 타격
-      if(p.attackLock>0){
-        const reach = (p.attackLock > (ATTACK_LOCK_ATK*0.35)) ? 0 : 1; // 너무 길게 맞는 느낌 방지
-        if(reach){
-          const range = (doSkl||p.skillCd>2.0) ? 110 : 76;
-          const cx = p.x + p.face*range*0.55;
-          const cy = p.y - 12;
-          const hit = aabb(cx-50, cy-40, 100, 80, e.x-e.w/2, e.y-e.h/2, e.w, e.h);
-          if(hit && e.hitCd<=0){
-            e.hitCd = 0.14;
-            e.anim="hurt"; e.animT=0;
+      // ✅ 플레이어 공격 판정(이번 스윙 타입으로 고정)
+      const sw = swingActiveWindow(p);
+      if(sw.active){
+        // 스윙당 1회만 맞도록
+        if(p.swingHitIds.has(e.id)) continue;
 
-            const mult = (doSkl||p.skillCd>2.0) ? 1.55 : 1.0;
-            const {dmg,crit} = damageCalc(d.atk, e.def, d.crit, mult);
-            e.hp -= dmg;
-            state.dmgText.push(new DamageText(e.x,e.y-64, crit?`★${dmg}`:`${dmg}`, crit?"rgba(255,207,91,0.95)":"rgba(235,240,255,0.92)"));
-            spawnHitFX(state,e.x,e.y-10);
+        const range = sw.range;
+        const cx = p.x + p.face*range*0.55;
+        const cy = p.y - 12;
+        const hit = aabb(cx-50, cy-40, 100, 80, e.x-e.w/2, e.y-e.h/2, e.w, e.h);
 
-            // 흡혈
-            if(d.ls>0){
-              const heal = Math.max(1, Math.floor(dmg*(d.ls/100)));
-              const before = p.hp;
-              p.hp = clamp(p.hp + heal, 0, d.hpMax);
-              if(p.hp>before) state.dmgText.push(new DamageText(p.x,p.y-86,`+${p.hp-before}`,"rgba(46,229,157,0.95)"));
-            }
+        if(hit && e.hitCd<=0){
+          p.swingHitIds.add(e.id);
 
-            if(e.hp<=0){
-              e.hp=0; e.dead=true; e.anim="die"; e.animT=0;
-              state.killed += 1;
-              p.kills += 1;
-              dropRewards(state,e);
-              if(state.killed>=state.goalKills) ensureDoor(state);
-            }
+          e.hitCd = 0.14;
+          e.anim="hurt"; e.animT=0;
+
+          const {dmg,crit} = damageCalc(d.atk, e.def, d.crit, sw.mult);
+          e.hp -= dmg;
+          state.dmgText.push(new DamageText(e.x,e.y-64, crit?`★${dmg}`:`${dmg}`, crit?"rgba(255,207,91,0.95)":"rgba(235,240,255,0.92)"));
+          spawnHitFX(state,e.x,e.y-10);
+
+          // 흡혈
+          if(d.ls>0){
+            const heal = Math.max(1, Math.floor(dmg*(d.ls/100)));
+            const before = p.hp;
+            p.hp = clamp(p.hp + heal, 0, d.hpMax);
+            if(p.hp>before) state.dmgText.push(new DamageText(p.x,p.y-86,`+${p.hp-before}`,"rgba(46,229,157,0.95)"));
+          }
+
+          if(e.hp<=0){
+            e.hp=0; e.dead=true; e.anim="die"; e.animT=0;
+            state.killed += 1;
+            p.kills += 1;
+            dropRewards(state,e);
+            if(state.killed>=state.goalKills) ensureDoor(state);
           }
         }
       }
     }
+
+    // ✅ 몬스터끼리 겹침 정리(“줄 서서 오는” 느낌 제거)
+    separateEnemies(state);
 
     // 코인/드랍 물리 + 줍기
     updateCoinsLoot(dt,state);
@@ -1996,14 +2051,8 @@
       const inDoor = aabb(p.x-p.w/2,p.y-p.h/2,p.w,p.h, door.x,door.y,door.w,door.h);
       if(inDoor){
         stageClearReward(state);
-        if(door.kind==="next"){
-          state.stageIndex += 1;
-          rebuildStage(state);
-        }else{
-          // exit -> 다음 스테이지(다음 챕터 느낌으로)
-          state.stageIndex += 1;
-          rebuildStage(state);
-        }
+        state.stageIndex += 1;
+        rebuildStage(state);
       }
     }
 
@@ -2022,28 +2071,22 @@
     const dt = clamp((now-last)/1000, 0, 0.033);
     last = now;
 
-    // 매 프레임 “클릭”은 1회성
     const clicked = pointer.clicked;
 
-    // 화면 클리어
     ctx.clearRect(0,0,VIEW_W,VIEW_H);
 
-    // 상태별 처리
     if(state.gs==="MENU") drawMenu(state);
     else if(state.gs==="OPTIONS") drawOptions(state);
     else if(state.gs==="PAUSE") drawPause(state);
     else if(state.gs==="INV") drawInventory(state);
     else if(state.gs==="SHOP") drawShop(state);
     else {
-      // PLAY
       updatePlay(dt,state);
       drawScene(state,false);
     }
 
-    // 클릭 소모
     if(clicked) pointer.clicked=false;
 
-    // 남은 pressed는 “한 번만” 동작하도록 정리
     pressed.atk=false;
     pressed.skill=false;
 
