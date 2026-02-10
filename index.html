@@ -70,10 +70,8 @@
   }, { passive:false });
 
   // -------------------- Save/Load (수동 저장 전용) --------------------
-  // ✅ 슬롯 구조가 바뀌었으니 세이브 키를 새로 잡아서 구세이브와 충돌/버그 방지
   const SAVE_KEY = "boss_gate_web_v12_full_gear_split";
 
-  // ✅ 저장: "저장 버튼" 눌렀을 때만 호출한다.
   function saveGame(state) {
     try {
       const p = state.player;
@@ -82,31 +80,21 @@
         game: state.game || "보스게이트 (BOSS GATE)",
         createdAt: state.createdAt || isoNow(),
         updatedAt: isoNow(),
-
-        // ✅ UI 상태 저장 금지: 로드 시 무조건 PLAY로 복구 (무한루프 방지)
         gs: "PLAY",
-
         opt: state.opt || { muted:false, bgm:true, sfx:true },
-
         stageIndex: state.stageIndex || 1,
         inBossRoom: !!state.inBossRoom,
-
         player: {
           hp: p.hp,
           hpBase: p.hpBase, atkBase: p.atkBase, defBase: p.defBase, critBase: p.critBase, spdBase: p.spdBase,
-
           potions: p.potions,
           gold: p.gold,
           stage: state.stageIndex || p.stage || 1,
           kills: p.kills || 0,
-
           appraiseTickets: p.appraiseTickets || 0,
-
-          // 인벤/장비
           invItems: p.invItems || [],
           equip: p.equip || { weapon:null, chest:null, helm:null, gloves:null, boots:null, ring:null },
         },
-
         killed: state.killed || 0,
         goalKills: state.goalKills || 10,
       };
@@ -639,7 +627,6 @@
   }
 
   // -------------------- Items / Shop / Appraise --------------------
-  // ✅ 방어구를 4부위로 분할
   const SLOTS = ["weapon","chest","helm","gloves","boots","ring"];
 
   const RAR = [
@@ -649,7 +636,6 @@
     {k:"SSR",name:"전설", w: 2, opt:2, mult:1.85},
   ];
 
-  // ✅ 슬롯별 이름 테이블 분리(체감 다양화)
   const NAMES = {
     weapon:[
       "나무 검","철검","흑철검","청동 세이버","강철 대검",
@@ -724,7 +710,6 @@
   }
 
   function makeItem(slot, level){
-    // ✅ 구버전 호환: armor가 들어오면 chest로 치환
     if (slot === "armor") slot = "chest";
 
     const rar = rollRarity();
@@ -733,7 +718,6 @@
 
     let atk=0,def=0,hp=0,crit=0,spd=0;
 
-    // ✅ 슬롯별 베이스 스탯 분기
     if(slot==="weapon"){
       atk = randi(3,7);
       crit = randi(0,2);
@@ -772,7 +756,6 @@
       spd: Math.round(spd*mult),
     };
 
-    // ✅ "미감정"은 희귀 이상에서만 발생
     const identified = (rar.k==="N");
     const hidden = (rar.opt>0) ? rollAffixes(rar.opt) : [];
 
@@ -824,7 +807,6 @@
     return Math.max(5, Math.floor(base * rarMult * idBonus));
   }
 
-  // 상점/감정
   const POTION_MAX = 12;
   const POTION_HEAL_PCT = 0.35;
   const POTION_CD = 8.0;
@@ -843,15 +825,13 @@
   const CONTACT_DAMAGE_COOLDOWN = 0.22;
   const CONTACT_SEP_STRENGTH = 0.78;
 
-  // ✅ 드랍 확률 상향(요청 반영)
-  const DROP_RATE_NORMAL = 0.10; // 0.07 -> 0.10
-  const DROP_RATE_ELITE  = 0.22; // 0.18 -> 0.22
-  const DROP_RATE_BOSS   = 0.70; // 0.60 -> 0.70
+  const DROP_RATE_NORMAL = 0.10;
+  const DROP_RATE_ELITE  = 0.22;
+  const DROP_RATE_BOSS   = 0.70;
   const BOSS_DOUBLE_DROP_RATE = 0.22;
 
-  // ✅ 전투 종료 후 자연 회복(복구)
   const REGEN_DELAY = 2.5;
-  const REGEN_RATE_PCT = 0.025;   // 초당 최대체력의 2.5%
+  const REGEN_RATE_PCT = 0.025;
   const REGEN_NEAR_ENEMY = 420;
 
   function snapToGround(ent){
@@ -894,14 +874,12 @@
 
       this.appraiseTickets = 0;
 
-      // ✅ 자연 회복 상태값
       this.regenBlockT = 0;
       this.regenAcc = 0;
 
       this.anim = "idle";
       this.animT = 0;
 
-      // ✅ 시작 아이템: 모든 슬롯 1개씩 지급(장비 다양 체감 + 자동 장착 안정)
       this.invItems = [
         makeItem("weapon",1),
         makeItem("chest",1),
@@ -1080,6 +1058,16 @@
       : (s==="armor" ? "흉갑" : "장비");
   }
 
+  function slotIcon(s){
+    return s==="weapon" ? "⚔"
+      : s==="chest" ? "🛡"
+      : s==="helm" ? "⛑"
+      : s==="gloves" ? "🧤"
+      : s==="boots" ? "👢"
+      : s==="ring" ? "💍"
+      : "■";
+  }
+
   function itemLine(it){
     const idTag = it.identified ? "" : " (미감정)";
     return `[${it.rar}] ${slotName(it.slot)} | ${it.name}${idTag} | iLv ${it.ilvl} | PWR ${itemPow(it)} | 판매 ${sellPrice(it)}G`;
@@ -1098,38 +1086,28 @@
       game: "보스게이트 (BOSS GATE)",
       createdAt: isoNow(),
       updatedAt: isoNow(),
-
       gs: "MENU",
-
       opt: { muted:false, bgm:true, sfx:true },
-
       player: p,
       stageIndex: 1,
       inBossRoom: false,
-
       platforms: buildPlatforms(1),
       enemies: [],
       coins: [],
       loots: [],
-
       goalKills: 10,
       killed: 0,
-
       door: null,
       fx: [],
       dmgText: [],
       parts: [],
-
       msg: "보스문을 부숴라. (⚙: 메뉴, 🎒: 인벤, 🧪: 포션)",
       msgT: 2.2,
-
       t: 0,
       camX: 0,
-
       invSelId: null,
       invScroll: 0,
       shopScroll: 0,
-
       _dirty: false,
     };
   }
@@ -1188,7 +1166,7 @@
     Object.assign(state, fresh);
     rebuildStage(state);
     state.gs = "PLAY";
-    state._dirty = true; // 새 게임 시작 -> 저장 안 했음 표시
+    state._dirty = true;
   }
 
   function rollCrit(crit){ return (Math.random()*100) < crit; }
@@ -1437,7 +1415,6 @@
                     pointer.y>=HUD_INV_BTN.y && pointer.y<=HUD_INV_BTN.y+HUD_INV_BTN.h);
     drawIconBtn(HUD_INV_BTN.x, HUD_INV_BTN.y, HUD_INV_BTN.w, HUD_INV_BTN.h, "🎒", hotInv);
 
-    // 포션 개수 뱃지
     ctx.save();
     ctx.globalAlpha = 0.95;
     ctx.fillStyle = "rgba(0,0,0,0.35)";
@@ -1586,10 +1563,7 @@
       { t:"인벤토리(🎒/I)", hot:false, fn:()=> state.gs="INV" },
       { t:"상점/감정(🏪)", hot:false, fn:()=> state.gs="SHOP" },
       { t:"옵션", hot:false, fn:()=> state.gs="OPTIONS" },
-
-      // ✅ 수동 저장 버튼
       { t:`저장(수동) ${state._dirty ? "" : "(최신)"}`, hot:false, fn:()=> saveGame(state) },
-
       { t:"타이틀로", hot:false, fn:()=> { state.gs="MENU"; state.msg="타이틀로 이동."; state.msgT=1.3; } },
     ];
 
@@ -1627,16 +1601,13 @@
     p.hp = clamp(p.hp, 1, d.hpMax);
   }
 
-  // ✅ 장착(가방 → 장비)
   function equipFromBag(state, itemId){
     const p = state.player;
     const idx = p.invItems.findIndex(x=>x.id===itemId);
     if (idx < 0) return false;
     const it = p.invItems[idx];
 
-    // ✅ 구버전 아이템 armor -> chest로 치환
     if (it.slot === "armor") it.slot = "chest";
-
     const slot = it.slot;
     if (!SLOTS.includes(slot)) return false;
 
@@ -1650,7 +1621,6 @@
     return true;
   }
 
-  // ✅ 해제(장비 → 가방)
   function unequipToBag(state, slot){
     const p = state.player;
     if (slot === "armor") slot = "chest";
@@ -1755,6 +1725,84 @@
     ctx.restore();
   }
 
+  // ✅ (추가) 인벤 오른쪽 상단: 장착 슬롯 UI
+  function drawEquipSlotBar(state, x, y, w, h){
+    const p = state.player;
+
+    ctx.save();
+    ctx.fillStyle = "rgba(255,255,255,0.06)";
+    ctx.strokeStyle = "rgba(255,255,255,0.12)";
+    roundRect(x,y,w,h,12,true,true);
+
+    ctx.fillStyle = "rgba(235,240,255,0.88)";
+    ctx.font = "bold 12px ui-monospace, Menlo, Consolas";
+    ctx.fillText("장착 슬롯 (클릭하면 상세 표시)", x+12, y+18);
+
+    const pad = 10;
+    const innerX = x + pad;
+    const innerY = y + 26;
+    const innerW = w - pad*2;
+    const slotW = Math.floor((innerW - 10*5) / 6);
+    const slotH = h - 36;
+
+    // 현재 선택된 아이템이 장착중이면 해당 슬롯 하이라이트
+    const selId = state.invSelId;
+    let selSlot = null;
+    for (const s of SLOTS) {
+      const it = p.equip[s];
+      if (it && it.id === selId) { selSlot = s; break; }
+    }
+
+    for (let i=0;i<SLOTS.length;i++){
+      const s = SLOTS[i];
+      const sx = innerX + i*(slotW + 10);
+      const sy = innerY;
+
+      const it = p.equip[s] || null;
+      const isSel = (selSlot === s);
+
+      const border = it ? rarColor(it.rar) : "rgba(255,255,255,0.18)";
+      ctx.fillStyle = isSel ? "rgba(91,140,255,0.18)" : "rgba(0,0,0,0.18)";
+      ctx.strokeStyle = isSel ? "rgba(91,140,255,0.65)" : border;
+      ctx.lineWidth = isSel ? 2 : 1;
+
+      roundRect(sx, sy, slotW, slotH, 10, true, true);
+
+      // 아이콘
+      ctx.fillStyle = it ? "rgba(235,240,255,0.95)" : "rgba(235,240,255,0.55)";
+      ctx.font = "900 18px system-ui, -apple-system, Segoe UI";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(slotIcon(s), sx + slotW/2, sy + 18);
+
+      // 슬롯명
+      ctx.fillStyle = "rgba(235,240,255,0.78)";
+      ctx.font = "bold 10px ui-monospace, Menlo, Consolas";
+      ctx.fillText(slotName(s), sx + slotW/2, sy + 36);
+
+      // 장착 여부 요약(희귀도/미감정 표시)
+      if (it) {
+        ctx.fillStyle = border;
+        ctx.font = "900 10px ui-monospace, Menlo, Consolas";
+        const tag = it.identified ? it.rar : `${it.rar}?`;
+        ctx.fillText(tag, sx + slotW/2, sy + slotH - 10);
+      } else {
+        ctx.fillStyle = "rgba(235,240,255,0.30)";
+        ctx.font = "900 10px ui-monospace, Menlo, Consolas";
+        ctx.fillText("EMPTY", sx + slotW/2, sy + slotH - 10);
+      }
+
+      // 클릭 처리: 슬롯 클릭 -> 해당 장착템 선택(없으면 선택 해제)
+      if (pointer.clicked && pointer.x>=sx && pointer.x<=sx+slotW && pointer.y>=sy && pointer.y<=sy+slotH) {
+        state.invSelId = it ? it.id : null;
+      }
+    }
+
+    ctx.restore();
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+  }
+
   function drawInventory(state){
     drawScene(state, true);
 
@@ -1839,12 +1887,19 @@
 
     const sel = all.find(x=>x.it.id===state.invSelId)?.it || null;
 
+    // ✅ 오른쪽 상단: 장착 슬롯 바 추가
+    const equipBarH = 72;
+    drawEquipSlotBar(state, rightX, rightY, rightW, equipBarH);
+
     if (!sel) {
       ctx.fillStyle = "rgba(235,240,255,0.70)";
       ctx.font = "14px system-ui, -apple-system, Segoe UI";
-      ctx.fillText("왼쪽에서 아이템을 선택해.", rightX+10, rightY+30);
+      ctx.fillText("왼쪽 리스트 또는 위 슬롯을 클릭해.", rightX+10, rightY+equipBarH+30);
     } else {
-      drawItemDetail(state, rightX, rightY, rightW, rightH-120, sel);
+      // 상세 패널은 장착바 아래로 내려서 표시
+      const detailY = rightY + equipBarH + 10;
+      const detailH = (rightH - 120) - (equipBarH + 10);
+      drawItemDetail(state, rightX, detailY, rightW, detailH, sel);
 
       const bbY = rightY + rightH - 110;
       const bw = (rightW - 20);
@@ -2072,7 +2127,6 @@
     p.attackLock = Math.max(0, p.attackLock - dt);
     p.potionCd = Math.max(0, p.potionCd - dt);
 
-    // ✅ 전투 종료 후 자연 회복(복구)
     let nearEnemy = false;
     for (const e of state.enemies) {
       if (e.dead) continue;
@@ -2125,9 +2179,8 @@
     const doAtk = wantAttack();
     const doSkl = wantSkill();
 
-    // 공격(Z)
     if (doAtk && p.atkCd <= 0) {
-      p.regenBlockT = REGEN_DELAY; // 전투 행위 -> 회복 막기
+      p.regenBlockT = REGEN_DELAY;
       p.atkCd = 0.30;
       p.anim = "attack"; p.animT = 0;
       p.attackLock = Math.max(p.attackLock, ATTACK_LOCK_ATK);
@@ -2167,9 +2220,8 @@
     }
     pressed.atk = false;
 
-    // 스킬(X)
     if (doSkl && p.skillCd <= 0) {
-      p.regenBlockT = REGEN_DELAY; // 전투 행위 -> 회복 막기
+      p.regenBlockT = REGEN_DELAY;
       p.skillCd = 2.8;
       p.atkCd = 0.42;
       p.anim = "attack"; p.animT = 0;
@@ -2207,7 +2259,6 @@
     }
     pressed.skill = false;
 
-    // 적 AI + 접촉 판정
     for (const e of state.enemies) {
       if (e.dead) { e.dieT += dt; continue; }
       e.hitCd = Math.max(0, e.hitCd - dt);
@@ -2234,7 +2285,7 @@
       if (overlapped) stabilizeOverlapNoBounce(p, e);
 
       if (overlapped && p.inv <= 0 && p.hitCd <= 0) {
-        p.regenBlockT = REGEN_DELAY; // 피격 -> 회복 막기
+        p.regenBlockT = REGEN_DELAY;
 
         const { dmg } = damageCalc(e.atk, d.def, 0, 1);
 
@@ -2272,7 +2323,6 @@
 
     if (state.killed >= state.goalKills) ensureDoor(state);
 
-    // 코인 수집
     for (let i=state.coins.length-1;i>=0;i--){
       const c = state.coins[i];
       c.t += dt;
@@ -2292,7 +2342,6 @@
       }
     }
 
-    // 루팅
     for (let i=state.loots.length-1;i>=0;i--){
       const l = state.loots[i];
       l.t += dt;
@@ -2305,7 +2354,6 @@
         l.vx *= 0.45;
       }
       if (dist(l.x,l.y, p.x, p.y-20) < 38) {
-        // ✅ 구버전 armor 아이템이 떨어졌을 가능성 대비
         if (l.item && l.item.slot === "armor") l.item.slot = "chest";
         p.invItems.push(l.item);
         state.loots.splice(i,1);
@@ -2315,7 +2363,6 @@
       }
     }
 
-    // 문 진입
     if (state.door) {
       const d0 = state.door;
       if (aabb(p.x - p.w/2, p.y - p.h/2, p.w, p.h, d0.x, d0.y, d0.w, d0.h)) {
@@ -2341,7 +2388,6 @@
     state.camX = lerp(state.camX, targetX, smoothFactor(dt, 18));
     cam.x = state.camX;
 
-    // HUD 클릭(⚙/🧪/🎒) - ✅ 자동저장 없음
     const hotGear = (pointer.x>=HUD_MENU_BTN.x && pointer.x<=HUD_MENU_BTN.x+HUD_MENU_BTN.w &&
                      pointer.y>=HUD_MENU_BTN.y && pointer.y<=HUD_MENU_BTN.y+HUD_MENU_BTN.h);
     if (pointer.clicked && hotGear) state.gs = "PAUSE";
@@ -2373,18 +2419,12 @@
     st.player.regenBlockT ??= 0;
     st.player.regenAcc ??= 0;
 
-    // ✅ 구버전 호환: equip.armor -> chest로 이동(있다면)
     if (st.player.equip.armor) {
-      // armor를 chest로 승격. chest가 이미 있으면 armor는 가방으로 보냄.
       if (!st.player.equip.chest) st.player.equip.chest = st.player.equip.armor;
       else st.player.invItems.push(st.player.equip.armor);
       st.player.equip.armor = null;
     }
-
-    // ✅ 누락 슬롯 null 세팅
     for (const s of SLOTS) st.player.equip[s] = st.player.equip[s] || null;
-
-    // ✅ 인벤에 남아있는 armor 슬롯 아이템도 chest로 치환
     for (const it of st.player.invItems) {
       if (it && it.slot === "armor") it.slot = "chest";
     }
@@ -2397,7 +2437,6 @@
     st.player.invItems = raw.player?.invItems ?? st.player.invItems;
     st.player.equip = raw.player?.equip ?? st.player.equip;
 
-    // 2차 방어(로드 후 다시 보정)
     st.player.equip ??= { weapon:null, chest:null, helm:null, gloves:null, boots:null, ring:null };
     if (st.player.equip.armor) {
       if (!st.player.equip.chest) st.player.equip.chest = st.player.equip.armor;
@@ -2426,7 +2465,7 @@
     st.camX = 0;
 
     st._dirty = false;
-    st.gs = "PLAY"; // ✅ 로드 후 항상 정상 상태로 진입
+    st.gs = "PLAY";
     return st;
   }
 
@@ -2455,7 +2494,6 @@
     else if (state.gs === "SHOP") drawShop(state);
     else drawScene(state);
 
-    // ESC fallback
     if (pressed.menu) {
       pressed.menu = false;
       if (state.gs === "OPTIONS") state.gs = "MENU";
