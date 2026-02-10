@@ -125,7 +125,7 @@
   // --- Prevent scroll keys ---
   window.addEventListener("keydown", (e) => {
     const k = e.key.toLowerCase();
-    if (["arrowleft","arrowright","arrowup"," ","z","x","escape","i","p","h","enter","backspace"].includes(k)) {
+    if (["arrowleft","arrowright","arrowup"," ","z","x","escape","i","p","h","enter","backspace","o"].includes(k)) {
       e.preventDefault();
       e.stopPropagation();
     }
@@ -133,7 +133,22 @@
 
   // -------------------- Save/Load --------------------
   const SAVE_KEY = "boss_gate_web_v11_shop_fix";
-  function save(state) { try { localStorage.setItem(SAVE_KEY, JSON.stringify(state)); } catch {} }
+
+  // ✅ PATCH: 오버레이(INV/SHOP/OPTIONS/PAUSE) 상태로 저장되지 않게 하여 재접속 무한루프 방지
+  function save(state) {
+    try {
+      const overlay = new Set(["INV","SHOP","OPTIONS","PAUSE"]);
+      let st;
+      if (typeof structuredClone === "function") st = structuredClone(state);
+      else st = JSON.parse(JSON.stringify(state));
+
+      if (overlay.has(st.gs)) {
+        st.gs = st.uiReturn || "PLAY";
+      }
+      localStorage.setItem(SAVE_KEY, JSON.stringify(st));
+    } catch {}
+  }
+
   function load() {
     try {
       const raw = localStorage.getItem(SAVE_KEY);
@@ -401,6 +416,14 @@
   }, { passive:false });
 
   window.addEventListener("keyup", (e) => keys.delete(e.key.toLowerCase()), { passive:true });
+
+  // ✅ PATCH: 포커스 꼬임/이벤트 씹힘 대비(캡처 단계에서 ESC/P/I/O를 강제로 잡아줌)
+  window.addEventListener("keydown", (e) => {
+    const k = e.key.toLowerCase();
+    if (k === "escape" || k === "p") pressed.menu = true;
+    if (k === "i") pressed.inv = true;
+    if (k === "o") pressed.shop = true;
+  }, { capture: true, passive: true });
 
   const touch = document.getElementById("touch");
   const touchDown = new Set();
@@ -1129,36 +1152,6 @@
     state.gs = back;
   }
 
-  /* =========================================================
-     ✅ PATCH: UI 상태(OPTIONS/INV/SHOP)에서 ESC/⚙/I/O/P 전역 복귀
-     ========================================================= */
-  function uiBackHandle(state){
-    const isUI = (state.gs === "OPTIONS" || state.gs === "INV" || state.gs === "SHOP");
-    if (!isUI) return;
-
-    // 키 기반 뒤로가기(ESC/P/I/O)
-    if (pressed.menu || pressed.inv || pressed.shop) {
-      pressed.menu = false;
-      pressed.inv = false;
-      pressed.shop = false;
-      goBack(state);
-      save(state);
-      return;
-    }
-
-    // HUD ⚙(캔버스) 클릭도 뒤로가기 처리
-    if (
-      pointer.clicked &&
-      pointer.x >= HUD_MENU_BTN.x && pointer.x <= HUD_MENU_BTN.x + HUD_MENU_BTN.w &&
-      pointer.y >= HUD_MENU_BTN.y && pointer.y <= HUD_MENU_BTN.y + HUD_MENU_BTN.h
-    ) {
-      pointer.clicked = false;
-      goBack(state);
-      save(state);
-      return;
-    }
-  }
-
   function rollCrit(crit){ return (Math.random()*100) < crit; }
   function damageCalc(atk, def, critChance, mult=1){
     const c = rollCrit(critChance);
@@ -1549,7 +1542,6 @@
     if (hitBtn(bx,by+128,bw,bh)) { state.opt.sfx = !state.opt.sfx; applyOptions(state); save(state); }
     if (hitBtn(bx,by+212,bw,bh)) { goBack(state); save(state); }
 
-    // ESC/P로도 뒤로가기
     if (pressed.menu) { pressed.menu = false; goBack(state); save(state); }
 
     ctx.fillStyle = "rgba(235,240,255,0.65)";
@@ -1682,7 +1674,6 @@
     const px = 80, py = 50, pw = 800, ph = 440;
     panel(px, py, pw, ph, "인벤토리");
 
-    // 상단 장착
     const ex = px+20, ey = py+48;
     ctx.fillStyle = "rgba(235,240,255,0.80)";
     ctx.font = "bold 13px ui-monospace, Menlo, Consolas";
@@ -1706,7 +1697,6 @@
       ctx.font = "11px ui-monospace, Menlo, Consolas";
       ctx.fillText(sb.slot.toUpperCase(), sb.x+118, sb.y+22);
 
-      // 장착 해제 버튼
       const ux = sb.x+128, uy = sb.y+7;
       if (it) {
         ctx.fillStyle = "rgba(255,91,110,0.14)";
@@ -1725,7 +1715,6 @@
       }
     }
 
-    // 우측 상단 버튼들
     const bx = px+pw-20-160, by = py+48, bw=160, bh=34;
     btn(bx, by, bw, bh, "자동장착", true);
     btn(bx, by+40, bw, bh, "정렬", false);
@@ -1737,7 +1726,6 @@
     if (hitBtn(bx,by+80,bw,bh)) { openShop(state, "INV"); save(state); }
     if (hitBtn(bx,by+120,bw,bh)) { goBack(state); save(state); }
 
-    // 리스트 영역
     const listX = px+20;
     const listY = py+100;
     const listW = 520;
@@ -1746,7 +1734,6 @@
     ctx.strokeStyle = "rgba(255,255,255,0.10)";
     roundRect(listX, listY, listW, listH, 12, true, true);
 
-    // 스크롤 처리(마우스 휠)
     if (Math.abs(pointer.wheelY) > 0.1) {
       const over = (pointer.x>=listX && pointer.x<=listX+listW && pointer.y>=listY && pointer.y<=listY+listH);
       if (over){
@@ -1759,11 +1746,9 @@
     const maxScroll = Math.max(0, p.invItems.length * rowH - (listH-12));
     state.invScroll = clamp(state.invScroll, 0, maxScroll);
 
-    // 선택 아이템 찾기
     let sel = null;
     if (state.invSelId) sel = p.invItems.find(it=>it.id===state.invSelId) || null;
 
-    // 리스트 그리기
     ctx.save();
     ctx.beginPath();
     ctx.rect(listX+6, listY+6, listW-12, listH-12);
@@ -1807,7 +1792,6 @@
 
     ctx.restore();
 
-    // 우측 상세
     const detailX = px+560;
     const detailY = py+210;
     const detailW = 300;
@@ -1840,8 +1824,8 @@
       ctx.font = "12px ui-monospace, Menlo, Consolas";
       ctx.fillText(`${sel.slot.toUpperCase()} | iLv ${sel.ilvl} | PWR ${itemPow(sel)}`, detailX+12, detailY+78);
 
-      const st = sel.stats;
-      ctx.fillText(`기본: ATK ${st.atk}  DEF ${st.def}  HP ${st.hp}  CRIT ${st.crit}  SPD ${st.spd}`, detailX+12, detailY+100);
+      const stt = sel.stats;
+      ctx.fillText(`기본: ATK ${stt.atk}  DEF ${stt.def}  HP ${stt.hp}  CRIT ${stt.crit}  SPD ${stt.spd}`, detailX+12, detailY+100);
 
       let yy = detailY+122;
       ctx.fillText(sel.identified ? "옵션:" : "옵션: (미감정)", detailX+12, yy);
@@ -1860,7 +1844,6 @@
         ctx.fillText(`숨김 옵션 ${sel.hidden?.length||0}개`, detailX+12, yy);
       }
 
-      // buttons
       const b1x = detailX+12, b1y = detailY+detailH-110, bW=detailW-24, bH=34;
       btn(b1x, b1y, bW, bH, "장착", true);
       btn(b1x, b1y+40, bW, bH, "상점에서 감정(🛒)", !sel.identified);
@@ -1901,10 +1884,11 @@
     ctx.font = "12px ui-monospace, Menlo, Consolas";
     ctx.fillText("휠: 목록 이동 | I/ESC/P: 닫기 | 상점에서 감정/물약 구매 가능", px+20, py+ph-18);
 
-    // ✅ 기존 키로 닫기 유지
-    if (pressed.inv || pressed.menu) {
+    // ✅ PATCH: I/ESC/P/O(상점키)로도 강제 닫기(복귀)
+    if (pressed.inv || pressed.menu || pressed.shop) {
       pressed.inv = false;
       pressed.menu = false;
+      pressed.shop = false;
       goBack(state);
       save(state);
     }
@@ -1919,7 +1903,6 @@
     const px = 80, py = 50, pw = 800, ph = 440;
     panel(px, py, pw, ph, "상점");
 
-    // 탭 버튼
     const tabX = px+20, tabY = py+46;
     const tW = 170, tH = 34, gap = 10;
 
@@ -1933,18 +1916,15 @@
     if (hitBtn(tabX+(tW+gap)*2, tabY, tW, tH)) { state.shopTab="SELL"; save(state); }
     if (hitBtn(px+pw-20-180, tabY, 180, tH)) { goBack(state); save(state); }
 
-    // 상단 자원 표시
     ctx.fillStyle = "rgba(235,240,255,0.80)";
     ctx.font = "bold 13px ui-monospace, Menlo, Consolas";
     ctx.fillText(`GOLD: ${p.gold}G   포션: ${p.potions}/${POTION_MAX}`, px+20, py+98);
 
-    // 콘텐츠 패널
     const cx = px+20, cy = py+110, cw = pw-40, ch = ph-150;
     ctx.fillStyle = "rgba(0,0,0,0.20)";
     ctx.strokeStyle = "rgba(255,255,255,0.10)";
     roundRect(cx, cy, cw, ch, 12, true, true);
 
-    // POTION
     if (state.shopTab==="POTION"){
       const cost = 60 + Math.floor(state.stageIndex*6);
       ctx.fillStyle = "rgba(235,240,255,0.85)";
@@ -1992,7 +1972,6 @@
       ctx.fillText("팁: 모바일은 🛒 버튼으로 상점 진입 | PC는 O 키", cx+16, cy+ch-18);
     }
 
-    // APPRAISE
     if (state.shopTab==="APPRAISE"){
       ctx.fillStyle = "rgba(235,240,255,0.85)";
       ctx.font = "bold 16px system-ui, -apple-system, Segoe UI";
@@ -2003,13 +1982,11 @@
       ctx.font = "13px system-ui, -apple-system, Segoe UI";
       ctx.fillText(`미감정 아이템: ${unid.length}개`, cx+16, cy+58);
 
-      // 좌측 리스트
       const listX = cx+16, listY = cy+74, listW = 420, listH = ch-90;
       ctx.fillStyle = "rgba(0,0,0,0.20)";
       ctx.strokeStyle = "rgba(255,255,255,0.10)";
       roundRect(listX, listY, listW, listH, 12, true, true);
 
-      // 스크롤
       if (Math.abs(pointer.wheelY) > 0.1) {
         const over = (pointer.x>=listX && pointer.x<=listX+listW && pointer.y>=listY && pointer.y<=listY+listH);
         if (over){
@@ -2068,7 +2045,6 @@
       }
       ctx.restore();
 
-      // 우측 상세 + 감정 버튼
       const detailX = cx+460, detailY = cy+74, detailW = cw-476, detailH = ch-90;
       ctx.fillStyle = "rgba(0,0,0,0.20)";
       ctx.strokeStyle = "rgba(255,255,255,0.10)";
@@ -2093,8 +2069,8 @@
         ctx.font = "12px ui-monospace, Menlo, Consolas";
         ctx.fillText(`${sel.slot.toUpperCase()} | iLv ${sel.ilvl} | PWR ${itemPow(sel)} | 숨김옵션 ${sel.hidden?.length||0}개`, detailX+12, detailY+76);
 
-        const st = sel.stats;
-        ctx.fillText(`기본: ATK ${st.atk}  DEF ${st.def}  HP ${st.hp}  CRIT ${st.crit}  SPD ${st.spd}`, detailX+12, detailY+98);
+        const stt = sel.stats;
+        ctx.fillText(`기본: ATK ${stt.atk}  DEF ${stt.def}  HP ${stt.hp}  CRIT ${stt.crit}  SPD ${stt.spd}`, detailX+12, detailY+98);
 
         ctx.fillStyle = "rgba(235,240,255,0.65)";
         ctx.font = "13px system-ui, -apple-system, Segoe UI";
@@ -2127,7 +2103,6 @@
       ctx.fillText("ESC/P: 닫기 | 감정은 상점에서만 가능(요청사항 반영)", cx+16, cy+ch-18);
     }
 
-    // SELL
     if (state.shopTab==="SELL"){
       ctx.fillStyle = "rgba(235,240,255,0.85)";
       ctx.font = "bold 16px system-ui, -apple-system, Segoe UI";
@@ -2167,7 +2142,6 @@
       ctx.fillText("팁: 감정 완료 후 판매가 상승하는 경향이 있음", cx+16, cy+ch-18);
     }
 
-    // 기존 ESC/P 닫기 유지
     if (pressed.menu) { pressed.menu=false; goBack(state); save(state); }
     if (pressed.shop) { pressed.shop=false; goBack(state); save(state); }
   }
@@ -2221,7 +2195,7 @@
     if (doAtk && p.atkCd <= 0) {
       p.atkCd = 0.30;
       p.anim = "attack"; p.animT = 0;
-      p.attackLock = Math.max(p.attackLock, ATTACK_LOCK_ATK);
+      p.attackLock = Math.max(p.attackLock, 0.18);
 
       const hx = p.x + p.face * 46;
       const hy = p.y - 10;
@@ -2263,7 +2237,7 @@
       p.skillCd = 2.8;
       p.atkCd = 0.42;
       p.anim = "attack"; p.animT = 0;
-      p.attackLock = Math.max(p.attackLock, ATTACK_LOCK_SKL);
+      p.attackLock = Math.max(p.attackLock, 0.24);
 
       const hx = p.x + p.face * 78;
       const hy = p.y - 12;
@@ -2298,7 +2272,6 @@
     }
     pressed.skill = false;
 
-    // 적 AI + 접촉
     for (const e of state.enemies) {
       if (e.dead) { e.dieT += dt; continue; }
       e.hitCd = Math.max(0, e.hitCd - dt);
@@ -2334,7 +2307,7 @@
 
         p.hp = clamp(p.hp - dmg, 0, d.hpMax);
         p.inv = 0.55;
-        p.hitCd = CONTACT_DAMAGE_COOLDOWN;
+        p.hitCd = 0.22;
         p.noHitT = 0;
 
         audio.playHit();
@@ -2366,7 +2339,6 @@
 
     if (state.killed >= state.goalKills) ensureDoor(state);
 
-    // 코인 수집
     for (let i=state.coins.length-1;i>=0;i--){
       const c = state.coins[i];
       c.t += dt;
@@ -2385,7 +2357,6 @@
       }
     }
 
-    // 루팅
     for (let i=state.loots.length-1;i>=0;i--){
       const l = state.loots[i];
       l.t += dt;
@@ -2406,7 +2377,6 @@
       }
     }
 
-    // 문 진입
     if (state.door) {
       const d0 = state.door;
       if (aabb(p.x - p.w/2, p.y - p.h/2, p.w, p.h, d0.x, d0.y, d0.w, d0.h)) {
@@ -2432,7 +2402,6 @@
     state.camX = lerp(state.camX, targetX, smoothFactor(dt, 18));
     cam.x = state.camX;
 
-    // HUD 클릭
     const hotGear = (pointer.x>=HUD_MENU_BTN.x && pointer.x<=HUD_MENU_BTN.x+HUD_MENU_BTN.w &&
                      pointer.y>=HUD_MENU_BTN.y && pointer.y<=HUD_MENU_BTN.y+HUD_MENU_BTN.h);
     if (pointer.clicked && hotGear) { state.gs = "PAUSE"; save(state); }
@@ -2459,6 +2428,11 @@
     st.gs = raw.gs || "MENU";
     st.opt = raw.opt || st.opt;
     st.uiReturn = raw.uiReturn || "MENU";
+
+    // ✅ PATCH: 저장 데이터가 오버레이로 끝났으면 강제로 PLAY로 복귀
+    if (["INV","SHOP","OPTIONS","PAUSE"].includes(st.gs)) {
+      st.gs = "PLAY";
+    }
 
     st.player = new Player();
     Object.assign(st.player, raw.player || {});
@@ -2506,9 +2480,6 @@
     last = t;
 
     state.t += dt;
-
-    /* ✅ PATCH: UI 상태에서 전역 뒤로가기/복귀 처리 */
-    uiBackHandle(state);
 
     if (state.gs === "PLAY") updatePlay(state, dt);
 
