@@ -9,6 +9,9 @@
   // 상단 텍스트를 더 간결하게 표시(지저분한 느낌 줄이기)
   const HUD_COMPACT_TEXT = true;
 
+  // ✅ 우측상단 "⚙(메뉴)" 아이콘을 화면에서 숨기기 (ESC 또는 터치 HUD로 메뉴 가능)
+  const HUD_SHOW_GEAR = false;
+
 
   const canvas = document.getElementById("game");
   const ctx = canvas.getContext("2d", { alpha:false });
@@ -295,6 +298,17 @@
   function setTouchKey(name,down){ if(down) touchDown.add(name); else touchDown.delete(name); }
 
   if(touch){
+    // ✅ 데스크톱(마우스)에서는 터치 HUD(#touch)를 숨겨서 화면 가림 방지
+    const isCoarse = (window.matchMedia && window.matchMedia("(pointer:coarse)").matches) || (navigator.maxTouchPoints>0);
+    const isSmall = (window.innerWidth||0) < 900;
+    const showTouch = isCoarse || isSmall;
+    touch.style.display = showTouch ? "" : "none";
+    window.addEventListener("resize", ()=>{
+      const _isCoarse = (window.matchMedia && window.matchMedia("(pointer:coarse)").matches) || (navigator.maxTouchPoints>0);
+      const _isSmall = (window.innerWidth||0) < 900;
+      touch.style.display = (_isCoarse || _isSmall) ? "" : "none";
+    }, {passive:true});
+
     touch.addEventListener("pointerdown",(e)=>{
       const t=e.target;
       if(!(t instanceof HTMLElement)) return;
@@ -531,19 +545,9 @@
   }
 
   function buildPlatforms(stageIndex){
+    // ✅ 공중에 떠 있는 발판(플랫폼) 제거: 바닥(지면)만 남김
     const plats=[];
     plats.push({x:0,y:GROUND_Y,w:WORLD.w,h:80});
-    const seed=stageIndex*1337;
-    const rng=(n)=>{
-      const s=Math.sin(seed+n*12.9898)*43758.5453;
-      return s-Math.floor(s);
-    };
-    for(let i=0;i<10;i++){
-      const px=420+i*320+randi(-40,40);
-      const py=GROUND_Y-120-Math.floor(rng(i)*220);
-      plats.push({x:px,y:py,w:170+randi(0,60),h:18});
-    }
-    plats.push({x:WORLD.w-720,y:GROUND_Y-160,w:220,h:18});
     return plats;
   }
 
@@ -1398,12 +1402,15 @@
       ctx.fillText(`BOSS GATE | STAGE ${stageLabel(state.stageIndex)} ${state.inBossRoom?"(BOSS)":""} | KILL ${state.killed}/${state.goalKills}`,350,38);
       ctx.fillText(`HP ${Math.floor(p.hp)}/${d.hpMax}  ATK ${d.atk} DEF ${d.def} CRIT ${d.crit}% SPD ${d.spd}`,350,56);
       ctx.fillText(`GOLD ${p.gold}G | 포션 ${p.potions}/${POTION_MAX} | 감정권 ${p.appraiseTickets} ${state._dirty?"| *미저장":""}`,350,74);
-      ctx.fillText(`⚙/ESC: 메뉴  🎒/I: 인벤  H/🧪: 포션`,350,92);
+      const hintMenu = HUD_SHOW_GEAR ? "⚙/ESC: 메뉴" : "ESC: 메뉴";
+      ctx.fillText(`${hintMenu}  🎒/I: 인벤  H/🧪: 포션`,350,92);
     }
 
-    const hotGear=(pointer.x>=HUD_MENU_BTN.x && pointer.x<=HUD_MENU_BTN.x+HUD_MENU_BTN.w &&
-                   pointer.y>=HUD_MENU_BTN.y && pointer.y<=HUD_MENU_BTN.y+HUD_MENU_BTN.h);
-    drawIconBtn(HUD_MENU_BTN.x,HUD_MENU_BTN.y,HUD_MENU_BTN.w,HUD_MENU_BTN.h,"⚙",hotGear);
+    if(HUD_SHOW_GEAR){
+      const hotGear=(pointer.x>=HUD_MENU_BTN.x && pointer.x<=HUD_MENU_BTN.x+HUD_MENU_BTN.w &&
+                     pointer.y>=HUD_MENU_BTN.y && pointer.y<=HUD_MENU_BTN.y+HUD_MENU_BTN.h);
+      drawIconBtn(HUD_MENU_BTN.x,HUD_MENU_BTN.y,HUD_MENU_BTN.w,HUD_MENU_BTN.h,"⚙",hotGear);
+    }
 
     const hotPot=(pointer.x>=HUD_POTION_BTN.x && pointer.x<=HUD_POTION_BTN.x+HUD_POTION_BTN.w &&
                   pointer.y>=HUD_POTION_BTN.y && pointer.y<=HUD_POTION_BTN.y+HUD_POTION_BTN.h);
@@ -2048,7 +2055,7 @@
       return;
     }
 
-    if(hitBtn(HUD_MENU_BTN.x,HUD_MENU_BTN.y,HUD_MENU_BTN.w,HUD_MENU_BTN.h)){
+    if(HUD_SHOW_GEAR && hitBtn(HUD_MENU_BTN.x,HUD_MENU_BTN.y,HUD_MENU_BTN.w,HUD_MENU_BTN.h)){
       state.gs="PAUSE";
     }
     if(hitBtn(HUD_INV_BTN.x,HUD_INV_BTN.y,HUD_INV_BTN.w,HUD_INV_BTN.h)){
