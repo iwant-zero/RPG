@@ -44,23 +44,6 @@
 
   // -------------------- Save/Load (수동 저장 전용) --------------------
   const SAVE_KEY = "boss_gate_web_v12_full_fixed"; // 유지(세이브 호환)
-  // ✅ 새로고침(F5) 후 메뉴 팝업 없이 이어하기 위한 "빠른 세이브"(자동)
-  //    - 수동 저장(SAVE_KEY)과는 별개 키로 관리합니다.
-  const QUICK_KEY = SAVE_KEY + "_quick";
-
-  function saveQuick(state){
-    try{
-      const payload = makeSavePayload(state, "PLAY");
-      localStorage.setItem(QUICK_KEY, JSON.stringify(payload));
-    }catch{}
-  }
-  function loadQuick(){
-    try{
-      const raw = localStorage.getItem(QUICK_KEY);
-      if(!raw) return null;
-      return JSON.parse(raw);
-    }catch{ return null; }
-  }
 
   function makeSavePayload(state,gsOverride){
     const p = state.player;
@@ -548,20 +531,9 @@
   }
 
   function buildPlatforms(stageIndex){
-    const plats=[];
-    plats.push({x:0,y:GROUND_Y,w:WORLD.w,h:80});
-    const seed=stageIndex*1337;
-    const rng=(n)=>{
-      const s=Math.sin(seed+n*12.9898)*43758.5453;
-      return s-Math.floor(s);
-    };
-    for(let i=0;i<10;i++){
-      const px=420+i*320+randi(-40,40);
-      const py=GROUND_Y-120-Math.floor(rng(i)*220);
-      plats.push({x:px,y:py,w:170+randi(0,60),h:18});
-    }
-    plats.push({x:WORLD.w-720,y:GROUND_Y-160,w:220,h:18});
-    return plats;
+    // ✅ 공중에 떠 있는 발판(플랫폼) 제거
+    // 바닥(지면)만 남기고 나머지 플랫폼은 생성하지 않습니다.
+    return [{x:0,y:GROUND_Y,w:WORLD.w,h:80}];
   }
 
   // -------------------- Items / Shop / Appraise --------------------
@@ -1052,8 +1024,6 @@
     const fresh=freshState();
     fresh.opt=opt;
     Object.assign(state,fresh);
-    // ✅ 새 게임 시작 시 자동 이어하기(quick) 기록을 초기화
-    try{ localStorage.removeItem(QUICK_KEY); }catch{}
     state.sessionActive=false;
     rebuildStage(state);
     state.gs="PLAY";
@@ -1535,7 +1505,6 @@
 
     if(hitBtn(bx,by+256,bw,bh)){
       localStorage.removeItem(SAVE_KEY);
-      try{ localStorage.removeItem(QUICK_KEY); }catch{};
       state.msg="저장 삭제 완료."; state.msgT=1.5;
     }
 
@@ -2297,37 +2266,11 @@
   }
 
   // -------------------- Main Loop --------------------
-  // ✅ F5(새로고침) 시 "새 게임/새로하기" 메뉴가 뜨지 않도록 자동 시작
-  //    1) 저장 데이터가 있으면 자동 이어하기
-  //    2) 없으면 자동 새 게임 시작
   let state = freshState();
   applyOptions(state);
+  rebuildStage(state);
 
-  const AUTO_START_ON_LOAD = true;
-  if(AUTO_START_ON_LOAD){
-    const saved = loadQuick() || load();
-    if(saved){
-      try{
-        state = revive(saved);
-        // revive()가 rebuildStage + gs="PLAY"까지 수행합니다.
-        applyOptions(state);
-        state.msg = "자동 이어하기";
-        state.msgT = 0.9;
-      }catch(e){
-        // 저장이 깨졌거나 호환 문제면 새 게임으로 폴백
-        state = freshState();
-        applyOptions(state);
-        startNew(state);
-      }
-    }else{
-      startNew(state);
-      applyOptions(state);
-    }
-  }else{
-    rebuildStage(state);
-  }
   let last = performance.now();
-  let lastQuick = 0;
   function frame(now){
     const dt = clamp((now-last)/1000, 0, 0.033);
     last = now;
@@ -2350,14 +2293,6 @@
 
     pressed.atk=false;
     pressed.skill=false;
-
-    // ✅ 자동 quicksave: 게임 중 변경이 있었으면 1.2초에 한 번만 저장
-    if(state.gs==="PLAY" && state._dirty && (now - lastQuick) > 1200){
-      saveQuick(state);
-      lastQuick = now;
-      // quicksave 완료 → 새로고침/F5 시 자동 이어하기가 가능하도록 정리
-      state._dirty = false;
-    }
 
     requestAnimationFrame(frame);
   }
