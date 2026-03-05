@@ -531,10 +531,19 @@
   }
 
   function buildPlatforms(stageIndex){
-    // ✅ 공중에 떠 있는 발판(플랫폼) 제거:
-    // 바닥(지면) 1개만 남겨서 맵 내부가 깔끔하게 "몬스터만" 보이도록 합니다.
     const plats=[];
     plats.push({x:0,y:GROUND_Y,w:WORLD.w,h:80});
+    const seed=stageIndex*1337;
+    const rng=(n)=>{
+      const s=Math.sin(seed+n*12.9898)*43758.5453;
+      return s-Math.floor(s);
+    };
+    for(let i=0;i<10;i++){
+      const px=420+i*320+randi(-40,40);
+      const py=GROUND_Y-120-Math.floor(rng(i)*220);
+      plats.push({x:px,y:py,w:170+randi(0,60),h:18});
+    }
+    plats.push({x:WORLD.w-720,y:GROUND_Y-160,w:220,h:18});
     return plats;
   }
 
@@ -826,13 +835,15 @@
       //    - "몬스터 인식 범위를 2배"로 늘리고 싶으면 아래 aggroRange 값을 2배로.
       this.aggro = (tier === "boss"); // 보스는 항상 어그로
       this.spawnX = x;                // 원래 위치(리시 기준)
-      this.leashDist = (tier === "boss") ? 9999 : (tier === "elite" ? 280 : 240);
+      // ✅ 최근 교전 타이머(맞았거나/때렸으면 일정 시간 리시 무시)
+      this.engagedT = 0;
+      // ✅ 리시 거리: 너무 짧으면 "도망치면 바로 멈춤" 버그가 생김 → 충분히 크게
+      this.leashDist = (tier === "boss") ? 9999 : (tier === "elite" ? 1600 : 1400);
 
       // ✅ [수정] 인식 범위 2배
       this.aggroRange = ((tier === "boss") ? 260 : (tier === "elite" ? 220 : 200)) * 2;
 
       this.engageRank = 999;          // 0이 가장 적극적(플레이어 근접/전투)
-      this.forcedEngageT = 0;        // ✅ 피격 시 강제 교전(버그: 안전지대 원거리 때리기 방지)
     }
   }
 
@@ -936,6 +947,9 @@
       goalKills:10,
       killed:0,
       door:null,
+      doorHintCd:0,
+      dead:false,
+      deadT:0,
       fx:[],
       dmgText:[],
       parts:[],
@@ -952,8 +966,6 @@
       sessionActive:false,
       // (옵션) 세션 스냅샷(현재는 메뉴 복귀 시 state 자체를 유지하므로 필수는 아님)
       sessionSave:null,
-      // ✅ 사망 연출/부활 타이머 (초)
-      deathLock:0,
     };
   }
 
@@ -1005,6 +1017,17 @@
       state.msg=`스테이지 ${stageLabel(si)} 시작! (${state.goalKills}마리 처치)`;
       state.msgT=1.8;
     }
+
+    // ✅ 게이트는 항상 맵 끝에 표시(잠김 상태).
+    //    목표 처치 수(state.killed >= state.goalKills) 달성 시 unlock 됩니다.
+    state.door = {
+      x: WORLD.w-300,
+      y: GROUND_Y-120,
+      w: 90, h: 120,
+      kind: state.inBossRoom ? "exit" : "next",
+      locked: true,
+    };
+
   }
 
   function startNew(state){
@@ -1098,12 +1121,20 @@
   }
 
   function ensureDoor(state){
-    if(state.door) return;
+    // ✅ 문은 항상 존재(잠김). 여기서는 unlock만 담당한다.
     const x=WORLD.w-300;
     const y=GROUND_Y-120;
     const w=90,h=120;
-    state.door={x,y,w,h,kind: state.inBossRoom?"exit":"next"};
-    state.msg=state.inBossRoom ? "출구 보스문이 열렸다!" : "다음 보스문이 열렸다!";
+
+    if(!state.door){
+      state.door={x,y,w,h,kind: state.inBossRoom?"exit":"next", locked:false};
+    }else{
+      state.door.x=x; state.door.y=y; state.door.w=w; state.door.h=h;
+      state.door.kind = state.inBossRoom?"exit":"next";
+      state.door.locked = false;
+    }
+
+    state.msg=state.inBossRoom ? "출구 게이트가 열렸다!" : "다음 보스게이트가 열렸다!";
     state.msgT=1.4;
   }
 
@@ -1125,72 +1156,45 @@
     markDirty(state);
   }
 
-
   // -------------------- Death / Respawn --------------------
-  // HP가 0 이하가 됐을 때,
-  //  - 골드가 남아있으면: '쓰러짐' 페널티(골드 감소) + HP 1로 버팀
-  //  - 골드가 0이 되면: 진짜 사망 처리 + 마을(스테이지 1)에서 부활
-  function triggerDeath(state){
-    if(state.deathLock>0) return;
+  function killPlayer(state){
+    if(state.dead) return;
     const p=state.player;
+
+    // 사망 페널티(골드 감소) — 원하면 조정 가능
+    p.gold = Math.max(0, Math.floor(p.gold*0.85));
+
+    state.dead = true;
+    state.deadT = 1.1;
 
     p.hp = 0;
     p.vx = 0; p.vy = 0;
     p.attackLock = 0;
+    p.atkCd = 0;
+    p.skillCd = 0;
+    p.inv = 0;
+    p.hitCd = 0;
 
-    // 잠깐 무적/피격정지로 "사망 연출" 안정화
-    p.inv = Math.max(p.inv, 99);
-    p.hitCd = Math.max(p.hitCd, 99);
-
-    state.door = null;
-
-    state.deathLock = 1.35; // 초
     state.msg = "사망… 마을에서 부활합니다.";
-    state.msgT = 2.0;
+    state.msgT = state.deadT;
     markDirty(state);
   }
 
   function respawnToTown(state){
     const p=state.player;
 
+    // 1스테이지(마을)로 복귀
+    state.dead = false;
+    state.deadT = 0;
     state.stageIndex = 1;
-    state.inBossRoom = false;
+
     rebuildStage(state);
 
-    p.hp = p.hpBase;
-    p.atkCd = 0; p.skillCd = 0; p.potionCd = 0;
-    p.hitCd = 0; p.inv = 0;
-    p.attackLock = 0;
+    // HP 회복
+    const d=p.derived();
+    p.hp = d.hpMax;
 
-    // 부활 시 포션은 기본 3개로 리셋(최대치 초과 금지)
-    p.potions = clamp(3, 0, POTION_MAX);
-
-    state.msg = "마을에서 부활했다.";
-    state.msgT = 1.4;
-    state.deathLock = 0;
-    markDirty(state);
-  }
-
-  function handlePlayerDownOrDeath(state){
-    const p=state.player;
-    if(p.hp>0) return;
-
-    const after = Math.floor(p.gold*0.85);
-
-    // ✅ 골드가 0이 되는 순간엔 더 이상 'HP 1 버팀'이 아니라 진짜 사망
-    if(after<=0){
-      p.gold = 0;
-      triggerDeath(state);
-      return;
-    }
-
-    // ✅ 골드가 남아있을 때만 '쓰러짐' 페널티
-    p.hp = 1;
-    p.gold = Math.max(0, after);
-    p.inv = Math.max(p.inv, 0.6);
-    p.hitCd = Math.max(p.hitCd, 0.6);
-
-    state.msg = "쓰러졌다… 골드를 일부 잃었다.";
+    state.msg = "부활했다. (스테이지 1)";
     state.msgT = 1.6;
     markDirty(state);
   }
@@ -1283,16 +1287,35 @@
   }
   function drawDoor(door){
     const x=door.x-cam.x, y=door.y-cam.y;
-    ctx.fillStyle=door.kind==="next"?"rgba(91,140,255,0.20)":"rgba(255,91,110,0.22)";
+    const locked = !!door.locked;
+
+    if(locked){
+      ctx.fillStyle="rgba(210,215,230,0.10)";
+      ctx.strokeStyle="rgba(210,215,230,0.35)";
+    }else{
+      ctx.fillStyle=door.kind==="next"?"rgba(91,140,255,0.20)":"rgba(255,91,110,0.22)";
+      ctx.strokeStyle=door.kind==="next"?"rgba(91,140,255,0.55)":"rgba(255,91,110,0.55)";
+    }
+
     roundRect(x,y,door.w,door.h,10,true,false);
-    ctx.strokeStyle=door.kind==="next"?"rgba(91,140,255,0.55)":"rgba(255,91,110,0.55)";
     ctx.lineWidth=2;
     roundRect(x,y,door.w,door.h,10,false,true);
+
     ctx.fillStyle="rgba(235,240,255,0.92)";
     ctx.font="bold 12px ui-monospace, Menlo, Consolas";
-    ctx.fillText(door.kind==="next"?"BOSS GATE":"EXIT GATE",x+10,y+20);
+
+    const title = locked ? "LOCKED" : (door.kind==="next" ? "BOSS GATE" : "EXIT GATE");
+    ctx.fillText(title, x+10, y+20);
+
+    if(locked){
+      ctx.font="12px ui-monospace, Menlo, Consolas";
+      ctx.fillStyle="rgba(235,240,255,0.70)";
+      ctx.fillText("KILL TO OPEN", x+10, y+40);
+    }
+
     ctx.lineWidth=1;
   }
+
   function drawCoins(coins){
     for(const c of coins){
       const x=c.x-cam.x, y=c.y-cam.y;
@@ -1896,7 +1919,7 @@
   }
 
   // ✅ 동시에 달라붙는 수를 제한(가만히 있어도 몬스터가 우르르 오는 느낌 완화)
-  const MAX_ENGAGE = 1;
+  const MAX_ENGAGE = 4;
 
   function computeEngageRanks(state){
     const p=state.player;
@@ -1913,7 +1936,9 @@
     e.aiT += dt;
     e.atkCd = Math.max(0, e.atkCd - dt);
     e.attackLock = Math.max(0, e.attackLock - dt);
-    e.forcedEngageT = Math.max(0, (e.forcedEngageT||0) - dt);
+
+    // ✅ 최근 교전(맞았거나/때렸거나) 상태 유지
+    e.engagedT = Math.max(0, (e.engagedT||0) - dt);
 
     const p=state.player;
     const dx=p.x-e.x;
@@ -1922,17 +1947,21 @@
 
     // ✅ 어그로 진입: 일정 범위 안으로 들어오면 추적 시작
     const dist = Math.abs(dx);
+
+    // (1) 최근 교전(맞았거나/때렸거나) 중이면 무조건 어그로 유지
+    if(e.engagedT>0) e.aggro = true;
+
+    // (2) 시야 안(인식 범위)으로 들어오면 어그로 진입
     if(!e.aggro && dist <= e.aggroRange){
       e.aggro = true;
     }
 
-    // ✅ 피격 후 일정 시간은 "강제 교전" 상태로 유지(공격 중인데 비공격 몬스터로 남는 버그 방지)
-    if(e.forcedEngageT>0){ e.aggro = true; }
-
-    // ✅ 리시: 원래 위치에서 너무 멀어지면 어그로 해제하고 복귀(보스 제외)
-    if(e.tier!=="boss" && e.aggro){
+    // ✅ 리시: 너무 멀리 유인 + 플레이어도 충분히 멀어졌을 때만 해제(보스 제외)
+    //    (도망치자마자 멈추는 버그 방지)
+    if(e.tier!=="boss" && e.aggro && e.engagedT<=0){
       const away = Math.abs(e.x - e.spawnX);
-      if(away > e.leashDist && e.forcedEngageT<=0){
+      const farFromPlayer = dist > e.aggroRange*3.2;
+      if(away > e.leashDist && farFromPlayer){
         e.aggro = false;
       }
     }
@@ -1951,7 +1980,7 @@
     }
 
     // ✅ 동시에 달라붙는 수 제한: 멀티는 접근을 덜 적극적으로
-    const engaged = (e.engageRank < MAX_ENGAGE) || (e.forcedEngageT>0);
+    const engaged = (e.engageRank < MAX_ENGAGE) || (dist < e.keepDist + 14) || (e.engagedT>0);
 
     // ✅ 너무 멀면 추적, 너무 가까우면 멈춤(개별 keepDist)
     const stopDist = e.keepDist + e.bias*40;
@@ -1964,16 +1993,18 @@
     const acc = engaged ? (12 + (e.tier==="boss"?6:0)) : 6;
     e.vx = lerp(e.vx, targetV, clamp(acc*dt, 0, 1));
 
-    // 공격(접근 시) — engaged만 공격
-    if(engaged && dist < (stopDist+10) && e.atkCd<=0 && e.attackLock<=0){
+    // 공격(접근 시) — 가까우면 누구든 공격(engaged는 더 자주/적극적으로)
+    if(dist < (stopDist+10) && e.atkCd<=0 && e.attackLock<=0){
       e.anim="attack"; e.animT=0;
 
-      // ✅ [수정] 공격 시작 시 "공격 총 길이"와 "이번 공격 1회 타격" 초기화
+      // ✅ 공격 시작 시 "공격 총 길이"와 "이번 공격 1회 타격" 초기화
       e.attackTotal = 0.18;
       e.attackLock  = e.attackTotal;
       e.hitPlayerThisSwing = false;
 
-      e.atkCd = (e.tier==="boss")?0.75:0.95;
+      const baseCd = (e.tier==="boss")?0.75:0.95;
+      e.atkCd = engaged ? baseCd : (baseCd + 0.35);
+
       e.vx *= 0.35;
     }
 
@@ -2005,16 +2036,15 @@
     const p=state.player;
     const d=p.derived();
 
-
-    // ✅ 사망 상태면 잠시 연출 후 마을(스테이지 1)에서 부활
-    if(state.deathLock>0){
-      state.deathLock -= dt;
-      // 입력/전투/이동 정지
-      p.vx = 0; p.vy = 0;
-      p.attackLock = 0;
-      if(state.deathLock<=0){
+    // ✅ 사망 상태: 입력/전투 정지, 잠시 후 마을 부활
+    if(state.dead){
+      state.deadT -= dt;
+      if(state.deadT<=0){
         respawnToTown(state);
       }
+      // 카메라(안정)
+      state.camX = clamp(p.x - VIEW_W*0.35, 0, WORLD.w - VIEW_W);
+      cam.x = lerp(cam.x, state.camX, 0.12);
       return;
     }
 
@@ -2035,6 +2065,7 @@
 
     state.t += dt;
     if(state.msgT>0) state.msgT -= dt;
+    if(state.doorHintCd>0) state.doorHintCd -= dt;
 
     updateEffects(dt,state);
 
@@ -2152,10 +2183,16 @@
             const dmg = Math.max(1, e.atk - d.def);
             p.hp -= dmg;
 
+            // ✅ 교전 상태 유지(도망치면 바로 멈추는 버그 방지)
+            e.aggro = true;
+            e.engagedT = 2.6;
+
+
             state.dmgText.push(new DamageText(p.x,p.y-72,`-${dmg}`,"rgba(255,91,110,0.95)"));
             spawnHitFX(state,p.x,p.y-20);
+
             if(p.hp<=0){
-              handlePlayerDownOrDeath(state);
+              killPlayer(state);
             }
           }
         }
@@ -2179,12 +2216,12 @@
 
           const {dmg,crit} = damageCalc(d.atk, e.def, d.crit, sw.mult);
           e.hp -= dmg;
-
-          // ✅ 피격한 몬스터는 즉시 "강제 교전"으로 전환: 멈춰서 맞기만 하는 안전지대 버그 방지
-          e.aggro = true;
-          e.forcedEngageT = Math.max(e.forcedEngageT||0, 2.6);
           state.dmgText.push(new DamageText(e.x,e.y-64, crit?`★${dmg}`:`${dmg}`, crit?"rgba(255,207,91,0.95)":"rgba(235,240,255,0.92)"));
           spawnHitFX(state,e.x,e.y-10);
+
+          // ✅ 맞은 몬스터는 강제로 교전 상태(리시 무시)로 전환
+          e.aggro = true;
+          e.engagedT = 2.6;
 
           // 흡혈
           if(d.ls>0){
@@ -2214,10 +2251,23 @@
     if(state.door){
       const door=state.door;
       const inDoor = aabb(p.x-p.w/2,p.y-p.h/2,p.w,p.h, door.x,door.y,door.w,door.h);
+
       if(inDoor){
-        stageClearReward(state);
-        state.stageIndex += 1;
-        rebuildStage(state);
+        if(door.locked){
+          // ✅ 잠김: 목표 처치 수를 채우기 전에는 진행 불가(게이트는 항상 보임)
+          if(state.doorHintCd<=0){
+            state.msg = `게이트가 잠겨 있다. (${state.killed}/${state.goalKills})`;
+            state.msgT = 1.2;
+            state.doorHintCd = 0.9;
+          }
+          // 살짝 밀어내기(문 안에 박혀 반복 진입 방지)
+          if(p.x > door.x + door.w*0.5) p.x = door.x - 10;
+          p.vx = Math.min(p.vx, -60);
+        }else{
+          stageClearReward(state);
+          state.stageIndex += 1;
+          rebuildStage(state);
+        }
       }
     }
 
