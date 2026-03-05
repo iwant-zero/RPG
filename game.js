@@ -1,6 +1,15 @@
 (() => {
   "use strict";
 
+
+  // -------------------- HUD 설정 --------------------
+  // 상단에 떠 있는 '받침대(배경 패널)'을 없애고 싶으면 false로 두면 됩니다.
+  // true로 바꾸면 기존처럼 상단 패널(배경)까지 함께 표시됩니다.
+  const HUD_BG_PANEL = false;
+  // 상단 텍스트를 더 간결하게 표시(지저분한 느낌 줄이기)
+  const HUD_COMPACT_TEXT = true;
+
+
   const canvas = document.getElementById("game");
   const ctx = canvas.getContext("2d", { alpha:false });
 
@@ -1264,12 +1273,14 @@
     const p=state.player;
     const d=p.derived();
 
-    ctx.globalAlpha=0.90;
-    ctx.fillStyle="rgba(10,14,24,0.70)";
-    roundRect(14,14,740,110,14,true,false);
-    ctx.strokeStyle="rgba(255,255,255,0.12)";
-    roundRect(14,14,740,110,14,false,true);
-    ctx.globalAlpha=1;
+    if(HUD_BG_PANEL){
+      ctx.globalAlpha=0.90;
+      ctx.fillStyle="rgba(10,14,24,0.70)";
+      roundRect(14,14,740,110,14,true,false);
+      ctx.strokeStyle="rgba(255,255,255,0.12)";
+      roundRect(14,14,740,110,14,false,true);
+      ctx.globalAlpha=1;
+    }
 
     const hpPct=clamp(p.hp/d.hpMax,0,1);
     ctx.fillStyle="rgba(255,255,255,0.10)";
@@ -1291,10 +1302,16 @@
 
     ctx.fillStyle="rgba(235,240,255,0.92)";
     ctx.font="bold 12px ui-monospace, Menlo, Consolas";
-    ctx.fillText(`BOSS GATE | STAGE ${stageLabel(state.stageIndex)} ${state.inBossRoom?"(BOSS)":""} | KILL ${state.killed}/${state.goalKills}`,350,38);
-    ctx.fillText(`HP ${Math.floor(p.hp)}/${d.hpMax}  ATK ${d.atk} DEF ${d.def} CRIT ${d.crit}% SPD ${d.spd}`,350,56);
-    ctx.fillText(`GOLD ${p.gold}G | 포션 ${p.potions}/${POTION_MAX} | 감정권 ${p.appraiseTickets} ${state._dirty?"| *미저장":""}`,350,74);
-    ctx.fillText(`⚙/ESC: 메뉴  🎒/I: 인벤  H/🧪: 포션`,350,92);
+    if(HUD_COMPACT_TEXT){
+      ctx.fillText(`STAGE ${stageLabel(state.stageIndex)} ${state.inBossRoom?"BOSS":""} | KILL ${state.killed}/${state.goalKills}`,350,44);
+      ctx.fillText(`HP ${Math.floor(p.hp)}/${d.hpMax}  ATK ${d.atk} DEF ${d.def}`,350,64);
+      ctx.fillText(`GOLD ${p.gold}G | 🧪 ${p.potions}/${POTION_MAX} | 🎟 ${p.appraiseTickets} ${state._dirty?"| *미저장":""}`,350,84);
+    }else{
+      ctx.fillText(`BOSS GATE | STAGE ${stageLabel(state.stageIndex)} ${state.inBossRoom?"(BOSS)":""} | KILL ${state.killed}/${state.goalKills}`,350,38);
+      ctx.fillText(`HP ${Math.floor(p.hp)}/${d.hpMax}  ATK ${d.atk} DEF ${d.def} CRIT ${d.crit}% SPD ${d.spd}`,350,56);
+      ctx.fillText(`GOLD ${p.gold}G | 포션 ${p.potions}/${POTION_MAX} | 감정권 ${p.appraiseTickets} ${state._dirty?"| *미저장":""}`,350,74);
+      ctx.fillText(`⚙/ESC: 메뉴  🎒/I: 인벤  H/🧪: 포션`,350,92);
+    }
 
     const hotGear=(pointer.x>=HUD_MENU_BTN.x && pointer.x<=HUD_MENU_BTN.x+HUD_MENU_BTN.w &&
                    pointer.y>=HUD_MENU_BTN.y && pointer.y<=HUD_MENU_BTN.y+HUD_MENU_BTN.h);
