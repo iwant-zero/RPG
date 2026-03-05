@@ -832,6 +832,7 @@
       this.aggroRange = ((tier === "boss") ? 260 : (tier === "elite" ? 220 : 200)) * 2;
 
       this.engageRank = 999;          // 0이 가장 적극적(플레이어 근접/전투)
+      this.forcedEngageT = 0;        // ✅ 피격 시 강제 교전(버그: 안전지대 원거리 때리기 방지)
     }
   }
 
@@ -1839,6 +1840,7 @@
     e.aiT += dt;
     e.atkCd = Math.max(0, e.atkCd - dt);
     e.attackLock = Math.max(0, e.attackLock - dt);
+    e.forcedEngageT = Math.max(0, (e.forcedEngageT||0) - dt);
 
     const p=state.player;
     const dx=p.x-e.x;
@@ -1851,10 +1853,13 @@
       e.aggro = true;
     }
 
+    // ✅ 피격 후 일정 시간은 "강제 교전" 상태로 유지(공격 중인데 비공격 몬스터로 남는 버그 방지)
+    if(e.forcedEngageT>0){ e.aggro = true; }
+
     // ✅ 리시: 원래 위치에서 너무 멀어지면 어그로 해제하고 복귀(보스 제외)
     if(e.tier!=="boss" && e.aggro){
       const away = Math.abs(e.x - e.spawnX);
-      if(away > e.leashDist){
+      if(away > e.leashDist && e.forcedEngageT<=0){
         e.aggro = false;
       }
     }
@@ -1873,7 +1878,7 @@
     }
 
     // ✅ 동시에 달라붙는 수 제한: 멀티는 접근을 덜 적극적으로
-    const engaged = (e.engageRank < MAX_ENGAGE);
+    const engaged = (e.engageRank < MAX_ENGAGE) || (e.forcedEngageT>0);
 
     // ✅ 너무 멀면 추적, 너무 가까우면 멈춤(개별 keepDist)
     const stopDist = e.keepDist + e.bias*40;
@@ -2092,6 +2097,10 @@
 
           const {dmg,crit} = damageCalc(d.atk, e.def, d.crit, sw.mult);
           e.hp -= dmg;
+
+          // ✅ 피격한 몬스터는 즉시 "강제 교전"으로 전환: 멈춰서 맞기만 하는 안전지대 버그 방지
+          e.aggro = true;
+          e.forcedEngageT = Math.max(e.forcedEngageT||0, 2.6);
           state.dmgText.push(new DamageText(e.x,e.y-64, crit?`★${dmg}`:`${dmg}`, crit?"rgba(255,207,91,0.95)":"rgba(235,240,255,0.92)"));
           spawnHitFX(state,e.x,e.y-10);
 
