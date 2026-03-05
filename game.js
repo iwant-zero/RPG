@@ -952,6 +952,8 @@
       sessionActive:false,
       // (옵션) 세션 스냅샷(현재는 메뉴 복귀 시 state 자체를 유지하므로 필수는 아님)
       sessionSave:null,
+      // ✅ 사망 연출/부활 타이머 (초)
+      deathLock:0,
     };
   }
 
@@ -1122,6 +1124,77 @@
     state.msgT=1.8;
     markDirty(state);
   }
+
+
+  // -------------------- Death / Respawn --------------------
+  // HP가 0 이하가 됐을 때,
+  //  - 골드가 남아있으면: '쓰러짐' 페널티(골드 감소) + HP 1로 버팀
+  //  - 골드가 0이 되면: 진짜 사망 처리 + 마을(스테이지 1)에서 부활
+  function triggerDeath(state){
+    if(state.deathLock>0) return;
+    const p=state.player;
+
+    p.hp = 0;
+    p.vx = 0; p.vy = 0;
+    p.attackLock = 0;
+
+    // 잠깐 무적/피격정지로 "사망 연출" 안정화
+    p.inv = Math.max(p.inv, 99);
+    p.hitCd = Math.max(p.hitCd, 99);
+
+    state.door = null;
+
+    state.deathLock = 1.35; // 초
+    state.msg = "사망… 마을에서 부활합니다.";
+    state.msgT = 2.0;
+    markDirty(state);
+  }
+
+  function respawnToTown(state){
+    const p=state.player;
+
+    state.stageIndex = 1;
+    state.inBossRoom = false;
+    rebuildStage(state);
+
+    p.hp = p.hpBase;
+    p.atkCd = 0; p.skillCd = 0; p.potionCd = 0;
+    p.hitCd = 0; p.inv = 0;
+    p.attackLock = 0;
+
+    // 부활 시 포션은 기본 3개로 리셋(최대치 초과 금지)
+    p.potions = clamp(3, 0, POTION_MAX);
+
+    state.msg = "마을에서 부활했다.";
+    state.msgT = 1.4;
+    state.deathLock = 0;
+    markDirty(state);
+  }
+
+  function handlePlayerDownOrDeath(state){
+    const p=state.player;
+    if(p.hp>0) return;
+
+    const after = Math.floor(p.gold*0.85);
+
+    // ✅ 골드가 0이 되는 순간엔 더 이상 'HP 1 버팀'이 아니라 진짜 사망
+    if(after<=0){
+      p.gold = 0;
+      triggerDeath(state);
+      return;
+    }
+
+    // ✅ 골드가 남아있을 때만 '쓰러짐' 페널티
+    p.hp = 1;
+    p.gold = Math.max(0, after);
+    p.inv = Math.max(p.inv, 0.6);
+    p.hitCd = Math.max(p.hitCd, 0.6);
+
+    state.msg = "쓰러졌다… 골드를 일부 잃었다.";
+    state.msgT = 1.6;
+    markDirty(state);
+  }
+
 
   // ✅ dt 기반 충돌/이동 (px/s)
   function collidePlatforms(ent,plats,dt){
@@ -1932,6 +2005,19 @@
     const p=state.player;
     const d=p.derived();
 
+
+    // ✅ 사망 상태면 잠시 연출 후 마을(스테이지 1)에서 부활
+    if(state.deathLock>0){
+      state.deathLock -= dt;
+      // 입력/전투/이동 정지
+      p.vx = 0; p.vy = 0;
+      p.attackLock = 0;
+      if(state.deathLock<=0){
+        respawnToTown(state);
+      }
+      return;
+    }
+
     if(hitBtn(HUD_MENU_BTN.x,HUD_MENU_BTN.y,HUD_MENU_BTN.w,HUD_MENU_BTN.h)){
       state.gs="PAUSE";
     }
@@ -2068,12 +2154,8 @@
 
             state.dmgText.push(new DamageText(p.x,p.y-72,`-${dmg}`,"rgba(255,91,110,0.95)"));
             spawnHitFX(state,p.x,p.y-20);
-
             if(p.hp<=0){
-              p.hp=1;
-              p.gold = Math.max(0, Math.floor(p.gold*0.85));
-              state.msg="쓰러졌다… 골드를 일부 잃었다.";
-              state.msgT=1.6;
+              handlePlayerDownOrDeath(state);
             }
           }
         }
