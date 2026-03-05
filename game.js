@@ -9,9 +9,6 @@
   // 상단 텍스트를 더 간결하게 표시(지저분한 느낌 줄이기)
   const HUD_COMPACT_TEXT = true;
 
-  // ✅ 우측상단 "⚙(메뉴)" 아이콘을 화면에서 숨기기 (ESC 또는 터치 HUD로 메뉴 가능)
-  const HUD_SHOW_GEAR = false;
-
 
   const canvas = document.getElementById("game");
   const ctx = canvas.getContext("2d", { alpha:false });
@@ -47,6 +44,23 @@
 
   // -------------------- Save/Load (수동 저장 전용) --------------------
   const SAVE_KEY = "boss_gate_web_v12_full_fixed"; // 유지(세이브 호환)
+  // ✅ 새로고침(F5) 후 메뉴 팝업 없이 이어하기 위한 "빠른 세이브"(자동)
+  //    - 수동 저장(SAVE_KEY)과는 별개 키로 관리합니다.
+  const QUICK_KEY = SAVE_KEY + "_quick";
+
+  function saveQuick(state){
+    try{
+      const payload = makeSavePayload(state, "PLAY");
+      localStorage.setItem(QUICK_KEY, JSON.stringify(payload));
+    }catch{}
+  }
+  function loadQuick(){
+    try{
+      const raw = localStorage.getItem(QUICK_KEY);
+      if(!raw) return null;
+      return JSON.parse(raw);
+    }catch{ return null; }
+  }
 
   function makeSavePayload(state,gsOverride){
     const p = state.player;
@@ -298,17 +312,6 @@
   function setTouchKey(name,down){ if(down) touchDown.add(name); else touchDown.delete(name); }
 
   if(touch){
-    // ✅ 데스크톱(마우스)에서는 터치 HUD(#touch)를 숨겨서 화면 가림 방지
-    const isCoarse = (window.matchMedia && window.matchMedia("(pointer:coarse)").matches) || (navigator.maxTouchPoints>0);
-    const isSmall = (window.innerWidth||0) < 900;
-    const showTouch = isCoarse || isSmall;
-    touch.style.display = showTouch ? "" : "none";
-    window.addEventListener("resize", ()=>{
-      const _isCoarse = (window.matchMedia && window.matchMedia("(pointer:coarse)").matches) || (navigator.maxTouchPoints>0);
-      const _isSmall = (window.innerWidth||0) < 900;
-      touch.style.display = (_isCoarse || _isSmall) ? "" : "none";
-    }, {passive:true});
-
     touch.addEventListener("pointerdown",(e)=>{
       const t=e.target;
       if(!(t instanceof HTMLElement)) return;
@@ -545,9 +548,19 @@
   }
 
   function buildPlatforms(stageIndex){
-    // ✅ 공중에 떠 있는 발판(플랫폼) 제거: 바닥(지면)만 남김
     const plats=[];
     plats.push({x:0,y:GROUND_Y,w:WORLD.w,h:80});
+    const seed=stageIndex*1337;
+    const rng=(n)=>{
+      const s=Math.sin(seed+n*12.9898)*43758.5453;
+      return s-Math.floor(s);
+    };
+    for(let i=0;i<10;i++){
+      const px=420+i*320+randi(-40,40);
+      const py=GROUND_Y-120-Math.floor(rng(i)*220);
+      plats.push({x:px,y:py,w:170+randi(0,60),h:18});
+    }
+    plats.push({x:WORLD.w-720,y:GROUND_Y-160,w:220,h:18});
     return plats;
   }
 
@@ -1039,6 +1052,8 @@
     const fresh=freshState();
     fresh.opt=opt;
     Object.assign(state,fresh);
+    // ✅ 새 게임 시작 시 자동 이어하기(quick) 기록을 초기화
+    try{ localStorage.removeItem(QUICK_KEY); }catch{}
     state.sessionActive=false;
     rebuildStage(state);
     state.gs="PLAY";
@@ -1402,15 +1417,12 @@
       ctx.fillText(`BOSS GATE | STAGE ${stageLabel(state.stageIndex)} ${state.inBossRoom?"(BOSS)":""} | KILL ${state.killed}/${state.goalKills}`,350,38);
       ctx.fillText(`HP ${Math.floor(p.hp)}/${d.hpMax}  ATK ${d.atk} DEF ${d.def} CRIT ${d.crit}% SPD ${d.spd}`,350,56);
       ctx.fillText(`GOLD ${p.gold}G | 포션 ${p.potions}/${POTION_MAX} | 감정권 ${p.appraiseTickets} ${state._dirty?"| *미저장":""}`,350,74);
-      const hintMenu = HUD_SHOW_GEAR ? "⚙/ESC: 메뉴" : "ESC: 메뉴";
-      ctx.fillText(`${hintMenu}  🎒/I: 인벤  H/🧪: 포션`,350,92);
+      ctx.fillText(`⚙/ESC: 메뉴  🎒/I: 인벤  H/🧪: 포션`,350,92);
     }
 
-    if(HUD_SHOW_GEAR){
-      const hotGear=(pointer.x>=HUD_MENU_BTN.x && pointer.x<=HUD_MENU_BTN.x+HUD_MENU_BTN.w &&
-                     pointer.y>=HUD_MENU_BTN.y && pointer.y<=HUD_MENU_BTN.y+HUD_MENU_BTN.h);
-      drawIconBtn(HUD_MENU_BTN.x,HUD_MENU_BTN.y,HUD_MENU_BTN.w,HUD_MENU_BTN.h,"⚙",hotGear);
-    }
+    const hotGear=(pointer.x>=HUD_MENU_BTN.x && pointer.x<=HUD_MENU_BTN.x+HUD_MENU_BTN.w &&
+                   pointer.y>=HUD_MENU_BTN.y && pointer.y<=HUD_MENU_BTN.y+HUD_MENU_BTN.h);
+    drawIconBtn(HUD_MENU_BTN.x,HUD_MENU_BTN.y,HUD_MENU_BTN.w,HUD_MENU_BTN.h,"⚙",hotGear);
 
     const hotPot=(pointer.x>=HUD_POTION_BTN.x && pointer.x<=HUD_POTION_BTN.x+HUD_POTION_BTN.w &&
                   pointer.y>=HUD_POTION_BTN.y && pointer.y<=HUD_POTION_BTN.y+HUD_POTION_BTN.h);
@@ -1523,6 +1535,7 @@
 
     if(hitBtn(bx,by+256,bw,bh)){
       localStorage.removeItem(SAVE_KEY);
+      try{ localStorage.removeItem(QUICK_KEY); }catch{};
       state.msg="저장 삭제 완료."; state.msgT=1.5;
     }
 
@@ -2055,7 +2068,7 @@
       return;
     }
 
-    if(HUD_SHOW_GEAR && hitBtn(HUD_MENU_BTN.x,HUD_MENU_BTN.y,HUD_MENU_BTN.w,HUD_MENU_BTN.h)){
+    if(hitBtn(HUD_MENU_BTN.x,HUD_MENU_BTN.y,HUD_MENU_BTN.w,HUD_MENU_BTN.h)){
       state.gs="PAUSE";
     }
     if(hitBtn(HUD_INV_BTN.x,HUD_INV_BTN.y,HUD_INV_BTN.w,HUD_INV_BTN.h)){
@@ -2284,11 +2297,37 @@
   }
 
   // -------------------- Main Loop --------------------
+  // ✅ F5(새로고침) 시 "새 게임/새로하기" 메뉴가 뜨지 않도록 자동 시작
+  //    1) 저장 데이터가 있으면 자동 이어하기
+  //    2) 없으면 자동 새 게임 시작
   let state = freshState();
   applyOptions(state);
-  rebuildStage(state);
 
+  const AUTO_START_ON_LOAD = true;
+  if(AUTO_START_ON_LOAD){
+    const saved = loadQuick() || load();
+    if(saved){
+      try{
+        state = revive(saved);
+        // revive()가 rebuildStage + gs="PLAY"까지 수행합니다.
+        applyOptions(state);
+        state.msg = "자동 이어하기";
+        state.msgT = 0.9;
+      }catch(e){
+        // 저장이 깨졌거나 호환 문제면 새 게임으로 폴백
+        state = freshState();
+        applyOptions(state);
+        startNew(state);
+      }
+    }else{
+      startNew(state);
+      applyOptions(state);
+    }
+  }else{
+    rebuildStage(state);
+  }
   let last = performance.now();
+  let lastQuick = 0;
   function frame(now){
     const dt = clamp((now-last)/1000, 0, 0.033);
     last = now;
@@ -2311,6 +2350,14 @@
 
     pressed.atk=false;
     pressed.skill=false;
+
+    // ✅ 자동 quicksave: 게임 중 변경이 있었으면 1.2초에 한 번만 저장
+    if(state.gs==="PLAY" && state._dirty && (now - lastQuick) > 1200){
+      saveQuick(state);
+      lastQuick = now;
+      // quicksave 완료 → 새로고침/F5 시 자동 이어하기가 가능하도록 정리
+      state._dirty = false;
+    }
 
     requestAnimationFrame(frame);
   }
