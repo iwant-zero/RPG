@@ -531,19 +531,10 @@
   }
 
   function buildPlatforms(stageIndex){
+    // ✅ 공중에 떠 있는 발판(플랫폼) 제거:
+    // 바닥(지면) 1개만 남겨서 맵 내부가 깔끔하게 "몬스터만" 보이도록 합니다.
     const plats=[];
     plats.push({x:0,y:GROUND_Y,w:WORLD.w,h:80});
-    const seed=stageIndex*1337;
-    const rng=(n)=>{
-      const s=Math.sin(seed+n*12.9898)*43758.5453;
-      return s-Math.floor(s);
-    };
-    for(let i=0;i<10;i++){
-      const px=420+i*320+randi(-40,40);
-      const py=GROUND_Y-120-Math.floor(rng(i)*220);
-      plats.push({x:px,y:py,w:170+randi(0,60),h:18});
-    }
-    plats.push({x:WORLD.w-720,y:GROUND_Y-160,w:220,h:18});
     return plats;
   }
 
